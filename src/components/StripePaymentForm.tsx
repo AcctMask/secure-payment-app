@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { stripePromise } from '../lib/stripe';
+import { stripePromise, isStripeConfigured } from '../lib/stripe';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { CreditCard, CheckCircle, AlertCircle, Shield, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+
+// Check if we're in test mode
+const isTestMode = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY?.startsWith('pk_test_');
 
 interface PaymentFormProps {
   amount: number;
@@ -15,6 +18,7 @@ interface PaymentFormProps {
   onError: (error: string) => void;
   onCancel?: () => void;
 }
+
 
 const PaymentForm: React.FC<PaymentFormProps> = ({ 
   amount, 
@@ -215,18 +219,20 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         )}
       </div>
 
-      <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-700">
-        <h4 className="text-sm font-medium text-blue-400 mb-2">Test Card Numbers:</h4>
-        <div className="text-xs text-gray-300 space-y-1">
-          <div>• <span className="font-mono">4242 4242 4242 4242</span> (Visa - Success)</div>
-          <div>• <span className="font-mono">4000 0000 0000 0002</span> (Generic Decline)</div>
-          <div>• <span className="font-mono">4000 0000 0000 9995</span> (Insufficient Funds)</div>
-          <div>• <span className="font-mono">4000 0000 0000 0069</span> (Expired Card)</div>
-          <div className="mt-2 text-gray-400">Use any future date for expiry and any 3-digit CVC</div>
+      {isTestMode && (
+        <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-700">
+          <h4 className="text-sm font-medium text-blue-400 mb-2">Test Card Numbers:</h4>
+          <div className="text-xs text-gray-300 space-y-1">
+            <div>• <span className="font-mono">4242 4242 4242 4242</span> (Visa - Success)</div>
+            <div>• <span className="font-mono">4000 0000 0000 0002</span> (Generic Decline)</div>
+            <div>• <span className="font-mono">4000 0000 0000 9995</span> (Insufficient Funds)</div>
+            <div>• <span className="font-mono">4000 0000 0000 0069</span> (Expired Card)</div>
+            <div className="mt-2 text-gray-400">Use any future date for expiry and any 3-digit CVC</div>
+          </div>
         </div>
-      </div>
+      )}
     </form>
-  );
+
 };
 
 interface StripePaymentFormProps {

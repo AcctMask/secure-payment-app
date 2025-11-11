@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
-import { Copy, Eye, EyeOff, CreditCard, Loader2, Smartphone } from 'lucide-react';
+import { Copy, Eye, EyeOff, CreditCard, Loader2, Smartphone, RefreshCw, Shield } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { CardRotationHistory } from './CardRotationHistory';
 
 interface CardDetails {
   number: string;
@@ -15,6 +16,12 @@ interface CardDetails {
   status: string;
 }
 
+interface MemberData {
+  id: string;
+  card_rotation_count: number;
+  last_card_rotation_at: string | null;
+}
+
 interface RealVirtualCardDisplayProps {
   memberId: string;
 }
@@ -22,11 +29,29 @@ interface RealVirtualCardDisplayProps {
 export const RealVirtualCardDisplay: React.FC<RealVirtualCardDisplayProps> = ({ memberId }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [cardDetails, setCardDetails] = useState<CardDetails | null>(null);
+  const [memberData, setMemberData] = useState<MemberData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchCardDetails();
+    fetchMemberData();
   }, [memberId]);
+
+  const fetchMemberData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('members')
+        .select('id, card_rotation_count, last_card_rotation_at')
+        .eq('id', memberId)
+        .single();
+
+      if (error) throw error;
+      setMemberData(data);
+    } catch (error: any) {
+      console.error('Error fetching member data:', error);
+    }
+  };
+
 
   const fetchCardDetails = async () => {
     try {
@@ -158,10 +183,17 @@ export const RealVirtualCardDisplay: React.FC<RealVirtualCardDisplayProps> = ({ 
             <li>✓ Use on any website (Amazon, eBay, etc.)</li>
             <li>✓ Add to Apple Pay or Google Pay for tap-to-pay</li>
             <li>✓ Monthly spending limit: $1,000</li>
-            <li>✓ Card details refresh automatically</li>
+            <li>✓ Card rotates after EVERY transaction for security</li>
           </ul>
         </CardContent>
       </Card>
+
+      {memberData && (
+        <CardRotationHistory
+          memberId={memberId}
+          rotationCount={memberData.card_rotation_count || 0}
+          lastRotation={memberData.last_card_rotation_at}
+        />
+      )}
     </div>
   );
-};

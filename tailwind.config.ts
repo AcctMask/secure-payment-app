@@ -21,6 +21,16 @@ export default {
     },
     extend: {
       colors: {
+        spaceforce: {
+          blue: '#1C3F94',
+          'blue-dark': '#0F2350',
+          'blue-darker': '#0A1A3D',
+          'blue-darkest': '#050F26',
+          silver: '#C0C0C0',
+          'silver-light': '#E8E8E8',
+          red: '#DC143C',
+          'red-dark': '#B01030',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
@@ -83,32 +93,12 @@ export default {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
-        'fade-in': {
-          from: { opacity: '0' },
-          to: { opacity: '1' },
-        },
-        'slide-in': {
-          from: { transform: 'translateY(10px)', opacity: '0' },
-          to: { transform: 'translateY(0)', opacity: '1' },
-        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'fade-in': 'fade-in 0.3s ease-out',
-        'slide-in': 'slide-in 0.3s ease-out',
-      },
-      typography: {
-        DEFAULT: {
-          css: {
-            maxWidth: 'none',
-          },
-        },
       },
     }
   },
-  plugins: [
-    animate,
-    typography,
-  ],
+  plugins: [animate, typography],
 } satisfies Config;

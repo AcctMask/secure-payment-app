@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProductSelectionModal } from './ProductSelectionModal';
 import { EnhancedVirtualCardPaymentModal } from './EnhancedVirtualCardPaymentModal';
 import { SecurePurchaseModal } from './SecurePurchaseModal';
+import { MembershipSuccessFlow } from './MembershipSuccessFlow';
 import { generateSecureCode } from '../utils/codeGenerator';
+
 interface Product {
   id: string;
   name: string;
@@ -13,6 +15,7 @@ interface Product {
   category: string;
 }
 
+
 export const SimpleAppLayout: React.FC = () => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -20,11 +23,29 @@ export const SimpleAppLayout: React.FC = () => {
   const [showSecurePurchase, setShowSecurePurchase] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<any>(null);
   const [purchaseCode, setPurchaseCode] = useState('');
+  const [showSuccessFlow, setShowSuccessFlow] = useState(false);
+  const [successData, setSuccessData] = useState<{ sessionId?: string; membershipType?: string }>({});
   const [accountCodes, setAccountCodes] = useState({
     personal: '8480 5315 7501 7233',
     work: '9199 8579 4432 4469',
     business: '1391 8663 4607 0362'
   });
+
+  // Check URL for success redirect from Stripe
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('success');
+    const sessionId = params.get('session_id');
+    const membershipType = params.get('membership');
+    
+    if (success === 'true' && sessionId) {
+      setSuccessData({ sessionId, membershipType: membershipType || 'Premium' });
+      setShowSuccessFlow(true);
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
 
   const virtualCard = {
     number: '4532123456789012',
@@ -52,12 +73,13 @@ export const SimpleAppLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen" style={{ 
-      background: 'radial-gradient(ellipse at center, #0f172a 0%, #1e40af 15%, #065f46 35%, #166534 55%, #92400e 75%, #000000 100%)'
+      background: 'radial-gradient(ellipse at center, #1C3F94 0%, #0F2350 20%, #0A1A3D 40%, #050F26 60%, #1C3F94 80%, #000000 100%)'
     }}>
       {/* Header with Logo */}
       <div style={{ 
-        background: 'linear-gradient(90deg, #0f172a 0%, #1e40af 25%, #065f46 50%, #166534 75%, #0f172a 100%)' 
+        background: 'linear-gradient(90deg, #1C3F94 0%, #0F2350 25%, #C0C0C0 50%, #0F2350 75%, #1C3F94 100%)' 
       }} className="shadow-lg">
+
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex items-center justify-center">
             <img 
@@ -66,11 +88,20 @@ export const SimpleAppLayout: React.FC = () => {
               className="h-12 mr-4"
             />
             <h1 className="text-3xl font-bold text-white">
-              Secure Code Generator
+              Secure Card Generator
             </h1>
           </div>
         </div>
       </div>
+
+      {/* Build timestamp for verification */}
+      <div className="text-center py-2 text-white/40 text-xs">
+        Build: Fri Oct 31 2025 6:20pm | Version 4.0.0 LIVE | NO SYSTEM CHECK ROUTE
+      </div>
+
+
+
+
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-6 py-12">
         {/* Main Heading */}
@@ -176,8 +207,10 @@ export const SimpleAppLayout: React.FC = () => {
                   Copy or Tap for Secure Purchase
                 </button>
               </div>
+              </div>
+            </div>
           </div>
-        </div>
+
 
         {/* Enterprise Features Section */}
         <div className="mb-12">
@@ -281,8 +314,15 @@ export const SimpleAppLayout: React.FC = () => {
           generatedCode={purchaseCode}
         />
       )}
+
+      {/* Membership Success Flow */}
+      <MembershipSuccessFlow
+        isOpen={showSuccessFlow}
+        onClose={() => setShowSuccessFlow(false)}
+        sessionId={successData.sessionId}
+        membershipType={successData.membershipType}
+      />
     </div>
   );
 };
 
-export default SimpleAppLayout;

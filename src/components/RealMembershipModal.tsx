@@ -3,15 +3,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { CheckCircle, Crown, Shield, Zap, CheckIcon, CreditCard, XCircle, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle, Crown, Shield, Zap, CheckIcon, CreditCard, XCircle, Loader2, AlertCircle, PlayCircle } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '../lib/supabase';
 import { SimplePaymentForm } from './SimplePaymentForm';
 import { Alert, AlertDescription } from './ui/alert';
+import { isDemoMode, simulateMembershipPurchase } from '../lib/demoMode';
+import { useAppContext } from '../contexts/AppContext';
+// Import Stripe configuration
+import { stripePromise, isStripeConfigured, isLiveMode } from '../lib/stripe';
 
-const stripeKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripeKey ? loadStripe(stripeKey) : null;
+// Debug Stripe configuration
+console.log('🎯 RealMembershipModal Stripe Status:', {
+  isConfigured: isStripeConfigured,
+  isLiveMode: isLiveMode,
+  hasStripePromise: !!stripePromise,
+  premiumPriceId: import.meta.env.VITE_STRIPE_PREMIUM_PRICE_ID,
+  proPriceId: import.meta.env.VITE_STRIPE_PRO_PRICE_ID
+});
 
 interface MembershipModalProps {
   isOpen: boolean;
@@ -34,7 +44,6 @@ const StripeCheckoutButton: React.FC<{
 
     setProcessing(true);
     try {
-      // Use Stripe Price IDs from environment variables
       const priceIds = {
         premium: import.meta.env.VITE_STRIPE_PREMIUM_PRICE_ID,
         pro: import.meta.env.VITE_STRIPE_PRO_PRICE_ID
@@ -42,9 +51,18 @@ const StripeCheckoutButton: React.FC<{
 
       const priceId = priceIds[plan.id as keyof typeof priceIds];
       
-      if (!priceId || priceId.includes('REPLACE_ME') || priceId.includes('1234567890')) {
-        throw new Error('Stripe Price IDs not configured. Please add VITE_STRIPE_PREMIUM_PRICE_ID and VITE_STRIPE_PRO_PRICE_ID to your .env file');
+      if (!priceId || priceId === '' || priceId === 'undefined' || priceId.includes('REPLACE_ME')) {
+        throw new Error(`Stripe Price IDs not configured. Please add them to your .env.local file.`);
       }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('placeholder')) {
+        throw new Error('Supabase is not configured. Please add credentials to your .env.local file.');
+      }
+
+      console.log('📞 Calling edge function...');
 
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
         body: { 
@@ -54,20 +72,47 @@ const StripeCheckoutButton: React.FC<{
         }
       });
 
-      if (error) throw error;
+      console.log('📥 Response:', { data, error });
+
+      if (error) {
+        console.error('❌ Error:', error);
+        if (error.message?.includes('Failed to send')) {
+          throw new Error('Cannot connect to payment service. Please check:\n1. Internet connection\n2. Supabase configuration\n3. Edge function deployment');
+        }
+        throw new Error(`Payment service error: ${error.message}`);
+      }
+      
+      if (!data) {
+        throw new Error('No response from payment service. Edge function may not be deployed.');
+      }
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
       if (data.url) {
+        console.log('✅ Redirecting to Stripe...');
         window.location.href = data.url;
+      } else {
+        throw new Error('No checkout URL received');
       }
     } catch (err: any) {
+      console.error('❌ Checkout error:', err);
       onError(err.message || 'Failed to start checkout');
       setProcessing(false);
     }
   };
 
-
-
   return (
     <form onSubmit={handleCheckout} className="space-y-4">
+      <Alert className="bg-green-900/20 border-green-600">
+        <CreditCard className="h-4 w-4" />
+        <AlertDescription>
+          <strong>🔒 LIVE MODE - Real Payment Processing</strong><br />
+          You will be redirected to Stripe's secure checkout page to complete your purchase with your personal credit card.
+        </AlertDescription>
+      </Alert>
+
       <div>
         <label className="block text-sm font-medium mb-2">Email Address</label>
         <input
@@ -93,23 +138,27 @@ const StripeCheckoutButton: React.FC<{
         ) : (
           <>
             <CreditCard className="w-4 h-4 mr-2" />
-            Subscribe ${plan.price}/mo
+            Pay ${plan.price}/mo with Stripe
           </>
         )}
       </Button>
       
       <p className="text-xs text-gray-400 text-center">
-        You'll be redirected to Stripe's secure checkout page
+        🔐 Secure checkout powered by Stripe • Use any credit or debit card
       </p>
     </form>
   );
+
 };
+
 
 
 export const RealMembershipModal: React.FC<MembershipModalProps> = ({ isOpen, onClose }) => {
   const [selectedPlan, setSelectedPlan] = useState<'premium' | 'pro' | null>(null);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentResult, setPaymentResult] = useState<any>(null);
+  const { setMemberData } = useAppContext();
+  const demoMode = isDemoMode();
 
   const plans = [
     {
@@ -170,42 +219,69 @@ export const RealMembershipModal: React.FC<MembershipModalProps> = ({ isOpen, on
   if (showPaymentForm && selectedPlan) {
     const plan = plans.find(p => p.id === selectedPlan)!;
     
-    // Use SimplePaymentForm if Stripe is not configured
-    if (!stripePromise) {
+    // Demo Mode - Use simulated checkout
+    if (demoMode) {
       return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
           <DialogContent className="sm:max-w-lg bg-gray-800 text-white border-gray-700">
             <DialogHeader>
-              <DialogTitle>Complete {plan.name} Subscription</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <PlayCircle className="w-5 h-5 text-blue-400" />
+                Demo: {plan.name} Subscription
+              </DialogTitle>
             </DialogHeader>
-            <SimplePaymentForm
-              plan={plan}
-              onSuccess={handlePaymentSuccess}
-              onError={handlePaymentError}
-              onCancel={() => setShowPaymentForm(false)}
-              stripeKey={stripeKey}
-            />
+            
+            <Alert className="bg-blue-900/20 border-blue-600">
+              <PlayCircle className="h-4 w-4" />
+              <AlertDescription className="text-sm">
+                <strong>Demo Mode Active:</strong> This is a simulated purchase. No real payment will be processed.
+                To enable real payments, configure your Stripe keys in the .env file.
+              </AlertDescription>
+            </Alert>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const email = (e.target as any).email.value;
+              try {
+                const result = await simulateMembershipPurchase(plan.id, email);
+                if (result.success) {
+                  setMemberData(result.memberData);
+                  handlePaymentSuccess({
+                    plan: plan.name,
+                    subscriptionId: `demo_sub_${Date.now()}`,
+                    ...result.memberData
+                  });
+                }
+              } catch (err: any) {
+                handlePaymentError(err.message || 'Demo purchase failed');
+              }
+            }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Email Address</label>
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  defaultValue="demo@example.com"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+                />
+              </div>
+              <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-purple-600">
+                Try {plan.name} (Demo)
+              </Button>
+            </form>
           </DialogContent>
         </Dialog>
       );
     }
-
-    // Use Stripe Checkout
+    
+    // ALWAYS use Stripe Checkout for live payments (no test mode fallback)
     return (
       <Dialog open={isOpen} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-lg bg-gray-800 text-white border-gray-700">
           <DialogHeader>
             <DialogTitle>Complete {plan.name} Subscription</DialogTitle>
           </DialogHeader>
-          
-          {!stripeKey && (
-            <Alert className="bg-yellow-900/20 border-yellow-600 mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Stripe is not configured. Add VITE_STRIPE_PUBLISHABLE_KEY to your .env file.
-              </AlertDescription>
-            </Alert>
-          )}
           
           <StripeCheckoutButton
             plan={plan}

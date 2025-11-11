@@ -13,9 +13,13 @@ dist/
 # Environment variables
 .env
 .env.local
+.env.local.save
 .env.development.local
 .env.test.local
 .env.production.local
+CURRENT_API_KEYS.md
+
+
 
 # Logs
 npm-debug.log*
@@ -40,6 +44,14 @@ pnpm-debug.log*
 *.png
 *.jpg
 *.jpeg
+*.gif
+*.mp3
+*.mp4
+*.wav
+*.zip
+*.rar
+*.tar
+*.gz
 *Logo*
 *Tax*
 *Business*
@@ -67,13 +79,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.vercel
-.env
-.env.*
-*.env
-*.env.*
-*/*.env*
-!.env.example
-!.env.production.example
-.env.local.save
-replacements.txt

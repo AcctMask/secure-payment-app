@@ -1,59 +1,46 @@
-# 🎯 VERCEL ROOT DIRECTORY FIX
+# FIX VERCEL 404 ERROR - ROOT DIRECTORY ISSUE
 
-## Common Issue: Wrong Root Directory
+## The Problem
+Your app is getting 404 errors because Vercel is looking in the wrong directory.
 
-If Vercel is deploying from the wrong folder, it might be showing old files.
+## The Solution - Fix Root Directory Setting
 
-## ✅ Fix Root Directory Setting
+### Step 1: Go to Project Settings
+1. Go to: https://vercel.com/secure-purchase/secure-payment-app-6b75
+2. Click **"Settings"** tab (top navigation)
+3. Click **"General"** in the left sidebar
 
-### Step 1: Check Current Setting
-1. Go to Vercel Dashboard
-2. Click your project
-3. Click **Settings** → **General**
-4. Scroll to **"Root Directory"**
+### Step 2: Find Root Directory Setting
+Scroll down to the **"Root Directory"** section
 
-### Step 2: Set Correct Root
-Your Root Directory should be:
-- **EMPTY** (blank field) 
-- OR set to **`.`** (single dot)
-- OR set to **`/`** (forward slash)
+### Step 3: Check Current Value
+- If it shows **ANY value** (like ".", "./", or any folder name)
+- Click **"Edit"** button
 
-### Step 3: Save & Redeploy
-1. Click **Save**
-2. Go to **Deployments**
-3. Click **Redeploy** on latest
-4. ✅ **UNCHECK** "Use existing Build Cache"
-5. Click **Redeploy**
+### Step 4: Clear It
+- **DELETE** any text in the Root Directory field
+- Leave it **COMPLETELY BLANK/EMPTY**
+- Click **"Save"**
 
----
+### Step 5: Verify Build Settings
+Scroll to **"Build & Development Settings"**:
+- **Framework Preset**: Vite
+- **Build Command**: `npm run build`
+- **Output Directory**: `dist`
+- **Install Command**: `npm install`
 
-## 🔍 Verify Build Settings
+### Step 6: Redeploy
+1. Go to **"Deployments"** tab
+2. Click the **top deployment**
+3. Click **"Redeploy"** (three dots menu)
+4. **Check "Clear Build Cache"**
+5. Click **"Redeploy"**
 
-While in Settings → General, also check:
+## Why This Fixes It
+Vercel needs to build from the repository root where package.json is located. If Root Directory is set to anything else, it can't find your files.
 
-### Build & Development Settings
-- **Framework Preset:** Vite
-- **Build Command:** `npm run build` or `vite build`
-- **Output Directory:** `dist`
-- **Install Command:** `npm install`
+## After Redeploying
+Wait 1-2 minutes for the build to complete, then check:
+- https://secure-payment-app-6b75.vercel.app
 
-### Environment Variables
-Make sure these are set:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `VITE_STRIPE_PUBLISHABLE_KEY`
-
----
-
-## 🚨 If Still Showing Diagnostics
-
-The issue is likely that GitHub doesn't have your latest code.
-
-**Run these commands:**
-```bash
-git add .
-git commit -m "fix: remove diagnostics, deploy v3.0"
-git push origin main
-```
-
-Then wait 2-3 minutes for Vercel auto-deploy.
+It should now work! ✓

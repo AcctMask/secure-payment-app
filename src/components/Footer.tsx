@@ -21,7 +21,8 @@ export const Footer: React.FC = () => {
           </a>
         </div>
         <p className="text-gray-500 text-sm">
-          © 2024 Secure Code Generator. All rights reserved.
+          © 2024 Secure Card Generator. All rights reserved.
+
         </p>
       </div>
     </footer>

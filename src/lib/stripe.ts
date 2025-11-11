@@ -3,13 +3,27 @@ import { loadStripe } from '@stripe/stripe-js';
 // Get Stripe publishable key from environment
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
+// Debug logging
+console.log('🔑 Stripe Configuration:', {
+  keyExists: !!stripePublishableKey,
+  keyLength: stripePublishableKey?.length,
+  keyPrefix: stripePublishableKey?.substring(0, 8),
+  isLive: stripePublishableKey?.startsWith('pk_live_'),
+  isTest: stripePublishableKey?.startsWith('pk_test_'),
+  premiumPriceId: import.meta.env.VITE_STRIPE_PREMIUM_PRICE_ID,
+  proPriceId: import.meta.env.VITE_STRIPE_PRO_PRICE_ID
+});
+
 // Initialize Stripe with the publishable key
-export const stripePromise = stripePublishableKey 
+export const stripePromise = stripePublishableKey && stripePublishableKey.startsWith('pk_')
   ? loadStripe(stripePublishableKey)
   : null;
 
 // Check if Stripe is properly configured
 export const isStripeConfigured = !!stripePublishableKey && stripePublishableKey.startsWith('pk_');
+
+// Check if we're in live mode
+export const isLiveMode = stripePublishableKey?.startsWith('pk_live_');
 
 // Test card numbers for Stripe testing
 export const TEST_CARDS = {
@@ -47,12 +61,12 @@ export const validateStripeKey = (key: string): boolean => {
 // Log Stripe configuration status
 if (stripePublishableKey) {
   if (validateStripeKey(stripePublishableKey)) {
-    console.log('✅ Stripe configured with valid key:', stripePublishableKey.substring(0, 20) + '...');
+    console.log('✅ Stripe configured successfully');
+    console.log(`🔐 Mode: ${isLiveMode ? 'LIVE' : 'TEST'}`);
   } else {
     console.error('❌ Invalid Stripe key format. Key should start with pk_test_ or pk_live_');
-    console.error('Current key:', stripePublishableKey);
   }
 } else {
-  console.warn('⚠️ No Stripe publishable key found. Add VITE_STRIPE_PUBLISHABLE_KEY to pk_live_51S8o3LCYgC6lPmKTNY1CENG99QbfLTOhuYR2nrLxrDy9aVqUrbCpwLGj8CNcw0Qflw31hRCGr4szDFDk1H3bPCuV00ySnstNru.env.local');
-  console.warn('💡 This is why the Premium/Professional plan buttons are disabled');
+  console.warn('⚠️ Stripe not configured. Please check your .env.local file');
+  console.warn('Expected: VITE_STRIPE_PUBLISHABLE_KEY=pk_live_...');
 }

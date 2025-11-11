@@ -72,7 +72,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const fetchIssuingCards = async (email: string) => {
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../lib/supabase');
       const { data, error } = await supabase.functions.invoke('get-issuing-cards', {
         body: { email }
       });
@@ -84,6 +84,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIssuingCards([]);
     }
   };
+
 
 
   const addAccount = (accountData: Partial<Account>) => {
