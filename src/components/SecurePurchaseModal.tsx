@@ -56,6 +56,11 @@ export const SecurePurchaseModal: React.FC<SecurePurchaseModalProps> = ({
     // Process payment with code
     setIsProcessing(true);
     try {
+      // Check if Supabase is configured
+      if (!supabase) {
+        throw new Error('Supabase is not configured. Please check your environment variables.');
+      }
+
       const { data, error } = await supabase.functions.invoke('process-code-payment', {
         body: {
           code: generatedCode,
@@ -66,7 +71,11 @@ export const SecurePurchaseModal: React.FC<SecurePurchaseModalProps> = ({
         }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to send a request to the Edge Function');
+      }
+      
       if (!data.success) throw new Error(data.error || 'Payment failed');
 
       // If a new code was generated, notify parent component
@@ -87,6 +96,7 @@ export const SecurePurchaseModal: React.FC<SecurePurchaseModalProps> = ({
         status: 'completed'
       });
     } catch (err: any) {
+      console.error('Payment error:', err);
       setPaymentResult({
         success: false,
         error: err.message || 'Payment processing failed'
@@ -94,6 +104,7 @@ export const SecurePurchaseModal: React.FC<SecurePurchaseModalProps> = ({
     } finally {
       setIsProcessing(false);
     }
+
   };
 
 

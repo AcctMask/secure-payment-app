@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
 interface SecureAccount {
@@ -50,8 +50,13 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const { toast } = useToast();
 
-  // Check auth status
+  // Check auth status only if Supabase is configured
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setIsAuthenticated(false);
+      return;
+    }
+
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -68,7 +73,6 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session) {
         syncAccounts();
       } else {
-        // Clear accounts when signed out for security
         setAccounts([]);
         localStorage.removeItem('secureAccounts');
       }
@@ -76,6 +80,10 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+
+
+
 
 
   // Load local accounts on mount
@@ -111,7 +119,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [isAuthenticated]);
 
   const syncAccounts = useCallback(async () => {
-    if (!isAuthenticated || !isOnline) return;
+    if (!isAuthenticated || !isOnline || !supabase) return;
 
     setIsSyncing(true);
     try {
@@ -121,6 +129,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .eq('is_deleted', false)
         .order('updated_at', { ascending: false });
+
 
       if (error) throw error;
 
@@ -236,8 +245,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedAccounts = [...accounts, newAccount];
     setAccounts(updatedAccounts);
     saveToLocal(updatedAccounts);
-
-    if (isAuthenticated && isOnline) {
+    if (isAuthenticated && isOnline && supabase) {
       try {
         await supabase.from('secure_accounts').insert({
           id: newAccount.id,
@@ -257,6 +265,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Failed to sync new account:', error);
       }
     }
+
   }, [accounts, isAuthenticated, isOnline, saveToLocal]);
 
   const updateAccount = useCallback(async (id: string, updates: Partial<SecureAccount>) => {
@@ -275,7 +284,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAccounts(updatedAccounts);
     saveToLocal(updatedAccounts);
 
-    if (isAuthenticated && isOnline) {
+    if (isAuthenticated && isOnline && supabase) {
       const account = updatedAccounts.find(a => a.id === id);
       if (account) {
         try {
@@ -315,7 +324,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAccounts(updatedAccounts);
     saveToLocal(updatedAccounts);
 
-    if (isAuthenticated && isOnline) {
+    if (isAuthenticated && isOnline && supabase) {
       try {
         await supabase.from('secure_accounts')
           .update({
@@ -333,7 +342,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time subscriptions
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !supabase) return;
 
     const subscription = supabase
       .channel('secure_accounts_changes')
@@ -355,6 +364,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       subscription.unsubscribe();
     };
   }, [isAuthenticated, syncAccounts]);
+
 
   return (
     <SyncContext.Provider value={{

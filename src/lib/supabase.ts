@@ -1,15 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// Initialize Supabase client with environment variables or fallback
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ygongssudngqrseklkah.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_wv3dVbHSmLwa7h7DfJntLw_DdDQ0aAS';
+const isConfigured = supabaseUrl && supabaseAnonKey && 
+  supabaseUrl !== 'your-project-url' && 
+  supabaseAnonKey !== 'your-anon-key';
 
-if (!import.meta.env.VITE_SUPABASE_URL) {
-  console.warn('Using fallback Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local');
-}
+// Create client with placeholder values if not configured (prevents crashes)
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+);
 
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-
-export { supabase };
+// Export flag to check if Supabase is actually configured
+export const isSupabaseConfigured = isConfigured;
