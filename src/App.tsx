@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { useEnvReloader } from "@/hooks/useEnvReloader";
 import Index from "./pages/Index";
 import PitchDeck from "./pages/PitchDeck";
+import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,13 +24,14 @@ const App = () => {
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/pitch" element={<PitchDeck />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
+         <BrowserRouter>
+  <Routes>
+    <Route path="/" element={<Index />} />
+    <Route path="/pitch" element={<PitchDeck />} />
+    <Route path="/privacy" element={<Privacy />} />
+    <Route path="*" element={<NotFound />} />
+  </Routes>
+</BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>
