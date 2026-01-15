@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Navigation } from './Navigation';
+import { Footer } from "./Footer";
 import { MemberAccountsDisplay } from './MemberAccountsDisplay';
 import { RealMembershipModal } from './RealMembershipModal';
 import { EnhancedProfileModal } from './EnhancedProfileModal';
@@ -24,8 +25,12 @@ export const AppLayout: React.FC = () => {
                 🚀 Next-Gen Payment Security
               </div>
               <h1 className="text-6xl font-bold text-white mb-6 leading-tight">
-                Protect Every Purchase with <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">Virtual Cards</span>
-              </h1>
+  Protect Every Purchase with{" "}
+  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+    PashLoc
+  </span>{" "}
+  Virtual Card System
+</h1>
               <p className="text-xl text-slate-300 mb-8 leading-relaxed">
                 Shield your real payment information with rotating virtual cards. Each transaction gets a unique, secure card number that expires after use.
               </p>
@@ -126,10 +131,13 @@ export const AppLayout: React.FC = () => {
         onClose={() => setIsMembershipModalOpen(false)}
       />
       
-      <EnhancedProfileModal
+           <EnhancedProfileModal
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
       />
+
+      <Footer />
     </div>
   );
 };
+
