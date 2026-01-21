@@ -1,3 +1,8 @@
+export const config = {
+  auth: false,
+};
+
+
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import Stripe from 'https://esm.sh/stripe@13.10.0?target=deno'
 
@@ -34,8 +39,8 @@ serve(async (req) => {
       }],
       mode: 'subscription',
       customer_email: email,
-      success_url: `${origin}/?success=true&session_id={CHECKOUT_SESSION_ID}&membership=${membershipType}`,
-      cancel_url: `${origin}/?canceled=true`,
+      success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&membership=${membershipType}`,
+      cancel_url: `${origin}/checkout/cancel`,
       metadata: {
         membershipType: membershipType
       }

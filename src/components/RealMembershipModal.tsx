@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
@@ -67,7 +68,7 @@ const StripeCheckoutButton: React.FC<{
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
         body: { 
           priceId: priceId,
-          email,
+	  email: "sp@sp4all.com",
           membershipType: plan.id
         }
       });

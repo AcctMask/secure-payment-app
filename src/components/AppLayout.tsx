@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DemoModal } from './DemoModal';
 import { Navigation } from './Navigation';
 import { Footer } from "./Footer";
 import { MemberAccountsDisplay } from './MemberAccountsDisplay';
@@ -10,6 +11,7 @@ import { CreditCard, Shield, Zap, CheckCircle, Lock, TrendingUp, Users, Award, A
 export const AppLayout: React.FC = () => {
   const [isMembershipModalOpen, setIsMembershipModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isDemoOpen, setIsDemoOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
@@ -45,7 +47,7 @@ export const AppLayout: React.FC = () => {
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
                 <Button
-                  onClick={() => setIsProfileModalOpen(true)}
+                 onClick={() => setIsDemoOpen(true)}
                   size="lg"
                   variant="outline"
                   className="bg-white/5 text-white border-white/20 hover:bg-white/10 font-semibold text-lg px-8 py-6 rounded-xl backdrop-blur-sm"
@@ -126,6 +128,12 @@ export const AppLayout: React.FC = () => {
       </div>
 
       {/* Modals */}
+<DemoModal
+  isOpen={isDemoOpen}
+  onClose={() => setIsDemoOpen(false)}
+  onBecomeMember={() => setIsMembershipModalOpen(true)}
+/>
+
       <RealMembershipModal
         isOpen={isMembershipModalOpen}
         onClose={() => setIsMembershipModalOpen(false)}
@@ -135,9 +143,8 @@ export const AppLayout: React.FC = () => {
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
       />
-
-      <Footer />
     </div>
+
   );
 };
 
