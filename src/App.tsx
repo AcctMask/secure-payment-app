@@ -34,7 +34,7 @@ const App = () => {
 
           <AppProvider>
             <BrowserRouter>
-              <div className="min-h-screen flex flex-col">
+              <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
                 <div className="flex-1">
                   <Routes>
                     <Route path="/" element={<Index />} />

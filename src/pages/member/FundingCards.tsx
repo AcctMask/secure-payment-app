@@ -41,6 +41,11 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
       const { data: siData, error: siErr } = await supabase.functions.invoke("create-setup-intent", {
         body: { email },
       });
+console.log("confirmCardSetup result:", result);
+if (result.error) {
+  console.error("Stripe confirmCardSetup error:", result.error);
+}
+
       if (siErr) throw siErr;
       if (!siData?.clientSecret || !siData?.setupIntentId) {
         throw new Error("Missing SetupIntent response");
@@ -70,6 +75,7 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
           setAsDefault: true,
         },
       });
+
       if (saveErr) throw saveErr;
       if (!saveData?.card) throw new Error("No saved card returned");
 
@@ -97,7 +103,8 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
           <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
             {err}
             <div className="text-xs text-white/60 mt-2">
-              If you’re using LIVE keys, test this on your HTTPS Vercel URL (not http://localhost). Some cards also block “save for future use”.
+              Note: some banks reject “save for future use” flows. This isn’t Issuing-related — it’s the card network/bank
+              declining the SetupIntent.
             </div>
           </div>
         )}
@@ -141,7 +148,11 @@ const FundingCardsPage: React.FC = () => {
             </p>
           </div>
 
-          <Button variant="outline" className="border-white/15 bg-white/5 hover:bg-white/10" onClick={() => navigate("/member")}>
+          <Button
+            variant="outline"
+            className="border-white/15 bg-white/5 hover:bg-white/10"
+            onClick={() => navigate("/member")}
+          >
             Back to Dashboard
           </Button>
         </div>
