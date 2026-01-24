@@ -17,6 +17,17 @@ type FundingCardRow = {
   created_at: string;
 };
 
+function getErrMessage(e: any): string {
+  // Supabase functions errors, Stripe errors, or plain JS errors
+  return (
+    e?.message ||
+    e?.error?.message ||
+    e?.error_description ||
+    e?.toString?.() ||
+    "Something went wrong"
+  );
+}
+
 const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ onSaved }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -28,8 +39,8 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
 
   const handleAddCard = async () => {
     setErr(null);
-
     if (!stripe || !elements) return;
+
     if (!email) {
       setErr("No member email found. Please complete membership verification first.");
       return;
@@ -37,16 +48,12 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
 
     setLoading(true);
     try {
-      // 1) Create SetupIntent server-side
+      // 1) Create SetupIntent server-side (Supabase Edge Function)
       const { data: siData, error: siErr } = await supabase.functions.invoke("create-setup-intent", {
         body: { email },
       });
-console.log("confirmCardSetup result:", result);
-if (result.error) {
-  console.error("Stripe confirmCardSetup error:", result.error);
-}
-
       if (siErr) throw siErr;
+
       if (!siData?.clientSecret || !siData?.setupIntentId) {
         throw new Error("Missing SetupIntent response");
       }
@@ -62,12 +69,18 @@ if (result.error) {
         },
       });
 
-      if (result.error) throw new Error(result.error.message || "Card setup failed");
-      if (!result.setupIntent || result.setupIntent.status !== "succeeded") {
-        throw new Error("SetupIntent did not succeed");
+      console.log("confirmCardSetup result:", result);
+
+      if (result.error) {
+        console.error("Stripe confirmCardSetup error:", result.error);
+        throw new Error(result.error.message || "Card setup failed");
       }
 
-      // 3) Save funding card metadata in Supabase via Edge Function
+      if (!result.setupIntent || result.setupIntent.status !== "succeeded") {
+        throw new Error(`SetupIntent did not succeed (status: ${result.setupIntent?.status ?? "unknown"})`);
+      }
+
+      // 3) Save funding card metadata in Supabase (Edge Function)
       const { data: saveData, error: saveErr } = await supabase.functions.invoke("save-funding-card", {
         body: {
           setupIntentId: siData.setupIntentId,
@@ -75,13 +88,12 @@ if (result.error) {
           setAsDefault: true,
         },
       });
-
       if (saveErr) throw saveErr;
       if (!saveData?.card) throw new Error("No saved card returned");
 
       onSaved(saveData.card as FundingCardRow);
     } catch (e: any) {
-      setErr(e?.message || "Something went wrong");
+      setErr(getErrMessage(e));
     } finally {
       setLoading(false);
     }
@@ -103,8 +115,7 @@ if (result.error) {
           <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
             {err}
             <div className="text-xs text-white/60 mt-2">
-              Note: some banks reject “save for future use” flows. This isn’t Issuing-related — it’s the card network/bank
-              declining the SetupIntent.
+              Note: Link/autofill showing is normal. Stripe Elements will not reveal full card details by design (PCI).
             </div>
           </div>
         )}
