@@ -15,9 +15,10 @@ type FundingCardRow = {
   exp_year: number | null;
   is_default: boolean | null;
   created_at: string;
+  stripe_payment_method_id: string;
 };
 
-const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ onSaved }) => {
+const CardSetupInner: React.FC<{ onSaved: () => Promise<void> }> = ({ onSaved }) => {
   const stripe = useStripe();
   const elements = useElements();
   const { memberData } = useAppContext();
@@ -29,7 +30,6 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
   const handleAddCard = async () => {
     setErr(null);
     if (!stripe || !elements) return;
-
     if (!email) {
       setErr("No member email found. Please complete membership verification first.");
       return;
@@ -42,11 +42,9 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
         body: { email },
       });
       if (siErr) throw siErr;
-      if (!siData?.clientSecret || !siData?.setupIntentId) {
-        throw new Error("Missing SetupIntent response");
-      }
+      if (!siData?.clientSecret || !siData?.setupIntentId) throw new Error("Missing SetupIntent response");
 
-      // 2) Confirm card setup in Stripe.js (IMPORTANT: include return_url for 3DS flows)
+      // 2) Confirm card setup in Stripe.js
       const cardEl = elements.getElement(CardElement);
       if (!cardEl) throw new Error("Card element not found");
 
@@ -55,7 +53,6 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
           card: cardEl,
           billing_details: { email },
         },
-        return_url: `${window.location.origin}/member/funding`,
       });
 
       console.log("confirmCardSetup result:", result);
@@ -64,7 +61,6 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
         console.error("Stripe confirmCardSetup error:", result.error);
         throw new Error(result.error.message || "Card setup failed");
       }
-
       if (!result.setupIntent || result.setupIntent.status !== "succeeded") {
         throw new Error(`SetupIntent did not succeed (status: ${result.setupIntent?.status ?? "unknown"})`);
       }
@@ -77,11 +73,10 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
           setAsDefault: true,
         },
       });
-
       if (saveErr) throw saveErr;
-      if (!saveData?.card) throw new Error("No saved card returned");
+      if (!saveData?.ok) throw new Error(saveData?.error || "save-funding-card failed");
 
-      onSaved(saveData.card as FundingCardRow);
+      await onSaved();
     } catch (e: any) {
       setErr(e?.message || "Something went wrong");
     } finally {
@@ -94,7 +89,8 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
       <CardContent className="p-6 space-y-4">
         <h2 className="text-lg font-semibold text-white">Add a Funding Card</h2>
         <p className="text-sm text-white/70">
-          Your card is securely tokenized by Stripe. PashLoc never stores full card numbers or CVC.
+          Stripe tokenizes your card. PashLoc never stores full card numbers or CVC (PCI).
+          Link/autofill display is normal.
         </p>
 
         <div className="rounded-lg border border-white/10 p-4 bg-black/30">
@@ -104,9 +100,6 @@ const CardSetupInner: React.FC<{ onSaved: (row: FundingCardRow) => void }> = ({ 
         {err && (
           <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
             {err}
-            <div className="text-xs text-white/60 mt-2">
-              If a bank declines “save for future use”, try a different card. Some issuers require a 3DS step (the return_url helps).
-            </div>
           </div>
         )}
 
@@ -122,18 +115,36 @@ const FundingCardsPage: React.FC = () => {
   const { memberData } = useAppContext();
   const [cards, setCards] = useState<FundingCardRow[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const email = memberData?.email;
 
-  useEffect(() => {
+  const loadCards = async () => {
+    setErr(null);
     setMsg(null);
-  }, [email]);
+    if (!email) return;
 
-  const onSaved = (row: FundingCardRow) => {
-    setCards((prev) => [row, ...prev]);
-    setMsg("✅ Funding card saved. Next: virtual card issuance.");
+    const { data, error } = await supabase.functions.invoke("get-funding-cards", {
+      body: { email },
+    });
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    if (!data?.ok) {
+      setErr(data?.error || "Failed to load funding cards");
+      return;
+    }
+
+    setCards(data.cards || []);
   };
+
+  useEffect(() => {
+    void loadCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900">
@@ -159,17 +170,23 @@ const FundingCardsPage: React.FC = () => {
         </div>
 
         {msg && <div className="text-sm text-green-300">{msg}</div>}
+        {err && <div className="text-sm text-red-300">{err}</div>}
 
         <Elements stripe={stripePromise}>
-          <CardSetupInner onSaved={onSaved} />
+          <CardSetupInner
+            onSaved={async () => {
+              setMsg("✅ Funding card saved. Next: virtual card issuance.");
+              await loadCards();
+            }}
+          />
         </Elements>
 
         <Card className="bg-black/20 backdrop-blur-sm border border-white/10">
           <CardContent className="p-6">
-            <h2 className="text-lg font-semibold mb-3">Saved Funding Cards (this session)</h2>
+            <h2 className="text-lg font-semibold mb-3">Saved Funding Cards</h2>
 
             {cards.length === 0 ? (
-              <p className="text-sm text-white/60">No cards shown yet. Add one above.</p>
+              <p className="text-sm text-white/60">No saved cards found yet.</p>
             ) : (
               <div className="space-y-3">
                 {cards.map((c) => (
@@ -179,16 +196,30 @@ const FundingCardsPage: React.FC = () => {
                   >
                     <div className="text-sm">
                       <div className="font-medium text-white">
-                        {c.brand?.toUpperCase() ?? "CARD"} •••• {c.last4 ?? "—"}
+                        {(c.brand || "CARD").toUpperCase()} •••• {c.last4 ?? "—"} {c.is_default ? "• Default" : ""}
                       </div>
                       <div className="text-white/70">
-                        Exp {c.exp_month ?? "—"}/{c.exp_year ?? "—"} {c.is_default ? "• Default" : ""}
+                        Exp {c.exp_month ?? "—"}/{c.exp_year ?? "—"}
+                      </div>
+                      <div className="text-white/50 text-xs mt-1">
+                        PM: {c.stripe_payment_method_id}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+
+            <div className="mt-4">
+              <Button
+                variant="outline"
+                className="border-white/15 bg-white/5 hover:bg-white/10"
+                onClick={() => void loadCards()}
+                disabled={!email}
+              >
+                Refresh List
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

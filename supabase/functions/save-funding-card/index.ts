@@ -1,118 +1,102 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from "https://esm.sh/stripe@14.21.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function json(status: number, body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 serve(async (req) => {
-  if (req.method === "OPTIONS") return json(200, { ok: true });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!stripeKey || !supabaseUrl || !serviceKey) throw new Error("Missing required env vars");
 
-    if (!stripeSecretKey || !supabaseUrl || !supabaseServiceKey) {
-      return json(500, { ok: false, error: "Missing STRIPE_SECRET_KEY / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY" });
+    const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    const body = await req.json();
+    const email = body?.email;
+    const setupIntentId = body?.setupIntentId;
+    const setAsDefault = body?.setAsDefault === true;
+
+    if (!email) throw new Error("Missing email");
+    if (!setupIntentId) throw new Error("Missing setupIntentId");
+
+    // Retrieve SetupIntent to find the PaymentMethod
+    const si = await stripe.setupIntents.retrieve(setupIntentId);
+    const pmId = typeof si.payment_method === "string" ? si.payment_method : si.payment_method?.id;
+    if (!pmId) throw new Error("SetupIntent missing payment_method");
+
+    // Retrieve PaymentMethod for metadata
+    const pm = await stripe.paymentMethods.retrieve(pmId);
+    const card = (pm as any).card;
+
+    // Ensure member exists
+    let memberId: string | null = null;
+
+    const { data: existing, error: exErr } = await supabase
+      .from("members")
+      .select("id,email")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (exErr) throw exErr;
+
+    if (existing?.id) {
+      memberId = existing.id;
+    } else {
+      const { data: created, error: cErr } = await supabase
+        .from("members")
+        .insert({ email, membership_status: "active" })
+        .select("id")
+        .single();
+      if (cErr) throw cErr;
+      memberId = created.id;
     }
 
-    // Parse JSON SAFELY (this is the main fix)
-    const raw = await req.text();
-    if (!raw) return json(400, { ok: false, error: "Empty request body" });
+    if (!memberId) throw new Error("Unable to resolve member");
 
-    let payload: any;
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      return json(400, { ok: false, error: "Request body is not valid JSON" });
-    }
-
-    const setupIntentId = payload?.setupIntentId;
-    const email = payload?.email;
-    const setAsDefault = !!payload?.setAsDefault;
-
-    if (!setupIntentId || !email) {
-      return json(400, { ok: false, error: "Missing setupIntentId or email" });
-    }
-
-    const stripe = new Stripe(stripeSecretKey, { apiVersion: "2023-10-16" });
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Retrieve the SetupIntent so we can read payment_method + card details
-    const si = await stripe.setupIntents.retrieve(setupIntentId, {
-      expand: ["payment_method", "customer"],
-    });
-
-    if (si.status !== "succeeded") {
-      return json(400, { ok: false, error: `SetupIntent not succeeded (status: ${si.status})` });
-    }
-
-    const pm = si.payment_method as Stripe.PaymentMethod | null;
-    if (!pm || pm.type !== "card" || !pm.card) {
-      return json(400, { ok: false, error: "SetupIntent has no card payment_method" });
-    }
-
-    // Find or create Stripe customer by email, and attach payment method
-    const customers = await stripe.customers.list({ email, limit: 1 });
-    const customer =
-      customers.data[0] ??
-      (await stripe.customers.create({
-        email,
-      }));
-
-    // Attach PM to customer (ignore if already attached)
-    try {
-      await stripe.paymentMethods.attach(pm.id, { customer: customer.id });
-    } catch (_e) {
-      // ignore "already attached" cases
-    }
-
+    // If setting default, unset other defaults
     if (setAsDefault) {
-      await stripe.customers.update(customer.id, {
-        invoice_settings: { default_payment_method: pm.id },
-      });
+      await supabase
+        .from("funding_sources")
+        .update({ is_default: false, updated_at: new Date().toISOString() })
+        .eq("member_id", memberId);
     }
 
-    // Store only SAFE metadata in DB
-    const cardRow = {
-      email,
-      stripe_customer_id: customer.id,
-      stripe_payment_method_id: pm.id,
-      brand: pm.card.brand ?? null,
-      last4: pm.card.last4 ?? null,
-      exp_month: pm.card.exp_month ?? null,
-      exp_year: pm.card.exp_year ?? null,
+    // Upsert funding source by unique payment_method_id
+    const insertRow = {
+      member_id: memberId,
+      stripe_payment_method_id: pmId,
+      brand: card?.brand ?? null,
+      last4: card?.last4 ?? null,
+      exp_month: card?.exp_month ?? null,
+      exp_year: card?.exp_year ?? null,
       is_default: setAsDefault,
       updated_at: new Date().toISOString(),
     };
 
-    // Try to upsert into funding_cards table (won't crash app if table differs)
-    try {
-      const { error: dbErr } = await supabase
-        .from("funding_cards")
-        .upsert(cardRow, { onConflict: "email,stripe_payment_method_id" });
+    const { data: saved, error: sErr } = await supabase
+      .from("funding_sources")
+      .upsert(insertRow, { onConflict: "stripe_payment_method_id" })
+      .select("id,brand,last4,exp_month,exp_year,is_default,created_at,stripe_payment_method_id")
+      .single();
 
-      if (dbErr) {
-        // Still return a usable response so UI can proceed
-        return json(200, { ok: true, warning: `DB write failed: ${dbErr.message}`, card: { id: pm.id, ...cardRow } });
-      }
-    } catch (e) {
-      return json(200, { ok: true, warning: `DB write skipped: ${String(e)}`, card: { id: pm.id, ...cardRow } });
-    }
+    if (sErr) throw sErr;
 
-    return json(200, { ok: true, card: { id: pm.id, ...cardRow } });
-  } catch (err) {
-    return json(500, { ok: false, error: (err as any)?.message ?? String(err) });
+    return new Response(JSON.stringify({ ok: true, card: saved }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ ok: false, error: err?.message ?? String(err) }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+    });
   }
 });
