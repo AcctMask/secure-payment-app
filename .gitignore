@@ -79,3 +79,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Supabase local/ephemeral
+supabase/.branches/
+supabase/.temp/
+supabase/migrations_backup_*/
