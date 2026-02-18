@@ -15,6 +15,7 @@ import Index from "./pages/Index";
 import PitchDeck from "./pages/PitchDeck";
 import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
+import Success from "./pages/Success";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import CheckoutCancel from "./pages/checkout/CheckoutCancel";
 import MemberDashboard from "./pages/MemberDashboard";
@@ -43,6 +44,7 @@ const App = () => {
                       <Route path="/privacy" element={<Privacy />} />
 
                       <Route path="/checkout/success" element={<CheckoutSuccess />} />
+                      <Route path="/success" element={<Success />} />
                       <Route path="/checkout/cancel" element={<CheckoutCancel />} />
                       <Route path="/checkout" element={<Checkout />} />
 
