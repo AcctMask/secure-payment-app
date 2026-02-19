@@ -83,3 +83,9 @@ dist-ssr
 supabase/.branches/
 supabase/.temp/
 supabase/migrations_backup_*/
+
+# Supabase temp
+supabase/.temp/
+
+# Local scratch
+test-invoke.mjs
