@@ -1,0 +1,878 @@
+
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+
+COMMENT ON SCHEMA "public" IS 'standard public schema';
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "wrappers" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION "public"."pashloc_fill_member_id_from_email"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+begin
+  new.member_id := public.pashloc_get_or_create_member_id(new.email);
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."pashloc_fill_member_id_from_email"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."pashloc_fill_member_id_nullable"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+begin
+  if new.email is not null and length(trim(new.email)) > 0 then
+    new.member_id := public.pashloc_get_or_create_member_id(new.email);
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."pashloc_fill_member_id_nullable"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."pashloc_get_or_create_member_id"("p_email" "text") RETURNS "uuid"
+    LANGUAGE "plpgsql"
+    AS $$
+declare
+  mid uuid;
+begin
+  if p_email is null or length(trim(p_email)) = 0 then
+    raise exception 'email is required';
+  end if;
+
+  select id into mid
+  from public.members
+  where email = p_email;
+
+  if mid is null then
+    insert into public.members (email, membership_status, member_since)
+    values (p_email, 'active', now())
+    returning id into mid;
+  end if;
+
+  return mid;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."pashloc_get_or_create_member_id"("p_email" "text") OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."funding_cards" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "member_id" "uuid" NOT NULL,
+    "email" "text" NOT NULL,
+    "stripe_payment_method_id" "text" NOT NULL,
+    "brand" "text",
+    "last4" "text",
+    "exp_month" integer,
+    "exp_year" integer,
+    "is_default" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."funding_cards" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."funding_sources" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "member_id" "uuid" NOT NULL,
+    "stripe_payment_method_id" "text",
+    "brand" "text",
+    "last4" "text",
+    "exp_month" smallint,
+    "exp_year" smallint,
+    "is_default" boolean DEFAULT false NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."funding_sources" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."issuing_cardholders" (
+    "member_id" "uuid" NOT NULL,
+    "email" "text" NOT NULL,
+    "stripe_cardholder_id" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."issuing_cardholders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."issuing_cards" (
+    "stripe_card_id" "text" NOT NULL,
+    "member_id" "uuid" NOT NULL,
+    "email" "text" NOT NULL,
+    "last4" "text",
+    "exp_month" integer,
+    "exp_year" integer,
+    "brand" "text",
+    "status" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."issuing_cards" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."issuing_events" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "member_id" "uuid",
+    "email" "text",
+    "event_type" "text" NOT NULL,
+    "stripe_authorization_id" "text",
+    "stripe_transaction_id" "text",
+    "stripe_charge_id" "text",
+    "amount" bigint,
+    "currency" "text",
+    "merchant_name" "text",
+    "status" "text",
+    "raw" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."issuing_events" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."members" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "text" NOT NULL,
+    "stripe_customer_id" "text",
+    "stripe_cardholder_id" "text",
+    "membership_status" "text" DEFAULT 'pending'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    "email" "text",
+    CONSTRAINT "members_membership_status_check" CHECK (("membership_status" = ANY (ARRAY['pending'::"text", 'active'::"text", 'canceled'::"text"])))
+);
+
+
+ALTER TABLE "public"."members" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."transactions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "member_id" "uuid" NOT NULL,
+    "stripe_card_id" "text" NOT NULL,
+    "stripe_transaction_id" "text" NOT NULL,
+    "amount" bigint,
+    "currency" "text",
+    "merchant_name" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."transactions" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."virtual_cards" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "member_id" "uuid" NOT NULL,
+    "stripe_card_id" "text" NOT NULL,
+    "last4" "text",
+    "exp_month" integer,
+    "exp_year" integer,
+    "status" "text" DEFAULT 'active'::"text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "virtual_cards_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'used'::"text", 'inactive'::"text"])))
+);
+
+
+ALTER TABLE "public"."virtual_cards" OWNER TO "postgres";
+
+
+ALTER TABLE ONLY "public"."funding_cards"
+    ADD CONSTRAINT "funding_cards_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."funding_sources"
+    ADD CONSTRAINT "funding_sources_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."funding_sources"
+    ADD CONSTRAINT "funding_sources_stripe_payment_method_id_key" UNIQUE ("stripe_payment_method_id");
+
+
+
+ALTER TABLE ONLY "public"."issuing_cardholders"
+    ADD CONSTRAINT "issuing_cardholders_pkey" PRIMARY KEY ("member_id");
+
+
+
+ALTER TABLE ONLY "public"."issuing_cards"
+    ADD CONSTRAINT "issuing_cards_pkey" PRIMARY KEY ("stripe_card_id");
+
+
+
+ALTER TABLE ONLY "public"."issuing_events"
+    ADD CONSTRAINT "issuing_events_pkey" PRIMARY KEY ("id");
+
+
+
+-- ALTER TABLE ONLY "public"."members"
+--     ADD CONSTRAINT "members_pkey" PRIMARY KEY ("id");
+-- 
+
+
+-- ALTER TABLE ONLY "public"."members"
+--     ADD CONSTRAINT "members_stripe_customer_id_key" UNIQUE ("stripe_customer_id");
+-- 
+
+
+-- ALTER TABLE ONLY "public"."transactions"
+--     ADD CONSTRAINT "transactions_pkey" PRIMARY KEY ("id");
+-- 
+
+
+-- ALTER TABLE ONLY "public"."virtual_cards"
+--     ADD CONSTRAINT "virtual_cards_pkey" PRIMARY KEY ("id");
+
+
+
+-- CREATE INDEX "funding_cards_email_idx" ON "public"."funding_cards" USING "btree" ("email");
+-- 
+
+
+CREATE INDEX "funding_cards_member_id_idx" ON "public"."funding_cards" USING "btree" ("member_id");
+
+
+
+CREATE INDEX "idx_funding_sources_member_id" ON "public"."funding_sources" USING "btree" ("member_id");
+
+
+
+CREATE INDEX "idx_members_stripe_customer_id" ON "public"."members" USING "btree" ("stripe_customer_id");
+
+
+
+CREATE INDEX "idx_members_user_id" ON "public"."members" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_transactions_member_id" ON "public"."transactions" USING "btree" ("member_id");
+
+
+
+CREATE INDEX "idx_transactions_stripe_card_id" ON "public"."transactions" USING "btree" ("stripe_card_id");
+
+
+
+CREATE INDEX "idx_virtual_cards_member_id" ON "public"."virtual_cards" USING "btree" ("member_id");
+
+
+
+CREATE INDEX "idx_virtual_cards_status" ON "public"."virtual_cards" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_virtual_cards_stripe_card_id" ON "public"."virtual_cards" USING "btree" ("stripe_card_id");
+
+
+
+CREATE INDEX "issuing_cardholders_email_idx" ON "public"."issuing_cardholders" USING "btree" ("email");
+
+
+
+CREATE INDEX "issuing_cards_email_idx" ON "public"."issuing_cards" USING "btree" ("email");
+
+
+
+CREATE INDEX "issuing_cards_member_id_idx" ON "public"."issuing_cards" USING "btree" ("member_id");
+
+
+
+CREATE INDEX "issuing_events_auth_idx" ON "public"."issuing_events" USING "btree" ("stripe_authorization_id");
+
+
+
+CREATE INDEX "issuing_events_email_idx" ON "public"."issuing_events" USING "btree" ("email");
+
+
+
+CREATE INDEX "issuing_events_member_id_idx" ON "public"."issuing_events" USING "btree" ("member_id");
+
+
+
+CREATE UNIQUE INDEX "members_email_unique" ON "public"."members" USING "btree" ("email") WHERE ("email" IS NOT NULL);
+
+
+
+CREATE OR REPLACE TRIGGER "trg_funding_cards_fill_member_id" BEFORE INSERT OR UPDATE OF "email" ON "public"."funding_cards" FOR EACH ROW EXECUTE FUNCTION "public"."pashloc_fill_member_id_from_email"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_issuing_cardholders_fill_member_id" BEFORE INSERT OR UPDATE OF "email" ON "public"."issuing_cardholders" FOR EACH ROW EXECUTE FUNCTION "public"."pashloc_fill_member_id_from_email"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_issuing_cards_fill_member_id" BEFORE INSERT OR UPDATE OF "email" ON "public"."issuing_cards" FOR EACH ROW EXECUTE FUNCTION "public"."pashloc_fill_member_id_from_email"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_issuing_events_fill_member_id" BEFORE INSERT OR UPDATE OF "email" ON "public"."issuing_events" FOR EACH ROW EXECUTE FUNCTION "public"."pashloc_fill_member_id_nullable"();
+
+
+
+ALTER TABLE ONLY "public"."funding_cards"
+    ADD CONSTRAINT "funding_cards_member_id_fkey" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."issuing_cardholders"
+    ADD CONSTRAINT "issuing_cardholders_member_id_fkey" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."issuing_cards"
+    ADD CONSTRAINT "issuing_cards_member_id_fkey" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."issuing_events"
+    ADD CONSTRAINT "issuing_events_member_id_fkey" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."transactions"
+    ADD CONSTRAINT "transactions_member_id_fkey" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."virtual_cards"
+    ADD CONSTRAINT "virtual_cards_member_id_fkey" FOREIGN KEY ("member_id") REFERENCES "public"."members"("id") ON DELETE CASCADE;
+
+
+
+CREATE POLICY "Service role full access members" ON "public"."members" USING (true);
+
+
+
+CREATE POLICY "Service role full access transactions" ON "public"."transactions" USING (true);
+
+
+
+CREATE POLICY "Service role full access virtual_cards" ON "public"."virtual_cards" USING (true);
+
+
+
+ALTER TABLE "public"."members" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."transactions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."virtual_cards" ENABLE ROW LEVEL SECURITY;
+
+
+
+
+ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
+
+
+GRANT USAGE ON SCHEMA "public" TO "postgres";
+GRANT USAGE ON SCHEMA "public" TO "anon";
+GRANT USAGE ON SCHEMA "public" TO "authenticated";
+GRANT USAGE ON SCHEMA "public" TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GRANT ALL ON FUNCTION "public"."pashloc_fill_member_id_from_email"() TO "anon";
+GRANT ALL ON FUNCTION "public"."pashloc_fill_member_id_from_email"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."pashloc_fill_member_id_from_email"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."pashloc_fill_member_id_nullable"() TO "anon";
+GRANT ALL ON FUNCTION "public"."pashloc_fill_member_id_nullable"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."pashloc_fill_member_id_nullable"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."pashloc_get_or_create_member_id"("p_email" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."pashloc_get_or_create_member_id"("p_email" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."pashloc_get_or_create_member_id"("p_email" "text") TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GRANT ALL ON TABLE "public"."funding_cards" TO "anon";
+GRANT ALL ON TABLE "public"."funding_cards" TO "authenticated";
+GRANT ALL ON TABLE "public"."funding_cards" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."funding_sources" TO "anon";
+GRANT ALL ON TABLE "public"."funding_sources" TO "authenticated";
+GRANT ALL ON TABLE "public"."funding_sources" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."issuing_cardholders" TO "anon";
+GRANT ALL ON TABLE "public"."issuing_cardholders" TO "authenticated";
+GRANT ALL ON TABLE "public"."issuing_cardholders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."issuing_cards" TO "anon";
+GRANT ALL ON TABLE "public"."issuing_cards" TO "authenticated";
+GRANT ALL ON TABLE "public"."issuing_cards" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."issuing_events" TO "anon";
+GRANT ALL ON TABLE "public"."issuing_events" TO "authenticated";
+GRANT ALL ON TABLE "public"."issuing_events" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."members" TO "anon";
+GRANT ALL ON TABLE "public"."members" TO "authenticated";
+GRANT ALL ON TABLE "public"."members" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."transactions" TO "anon";
+GRANT ALL ON TABLE "public"."transactions" TO "authenticated";
+GRANT ALL ON TABLE "public"."transactions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."virtual_cards" TO "anon";
+GRANT ALL ON TABLE "public"."virtual_cards" TO "authenticated";
+GRANT ALL ON TABLE "public"."virtual_cards" TO "service_role";
+
+
+
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUNCTIONS TO "service_role";
+
+
+
+
+
+
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+drop extension if exists "pg_net";
+
+

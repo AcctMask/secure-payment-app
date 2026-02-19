@@ -1,55 +1,59 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// supabase/functions/get-funding-cards/index.ts
+import Stripe from "https://esm.sh/stripe@16.12.0?target=deno";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceKey) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-
-    const supabase = createClient(supabaseUrl, serviceKey);
-
-    const { email } = await req.json().catch(() => ({}));
-    if (!email) throw new Error("Missing email");
-
-    const { data: member, error: mErr } = await supabase
-      .from("members")
-      .select("id,email")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (mErr) throw mErr;
-    if (!member?.id) {
-      return new Response(JSON.stringify({ ok: true, cards: [] }), {
+    const { stripeCustomerId } = await req.json();
+    if (!stripeCustomerId) {
+      return new Response(JSON.stringify({ error: "Missing stripeCustomerId" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
       });
     }
 
-    const { data: cards, error: cErr } = await supabase
-      .from("funding_sources")
-      .select("id,brand,last4,exp_month,exp_year,is_default,created_at,stripe_payment_method_id")
-      .eq("member_id", member.id)
-      .order("is_default", { ascending: false })
-      .order("created_at", { ascending: false });
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) {
+      return new Response(JSON.stringify({ error: "Missing STRIPE_SECRET_KEY secret" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    if (cErr) throw cErr;
+    const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
 
-    return new Response(JSON.stringify({ ok: true, cards: cards ?? [] }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
+    const pms = await stripe.paymentMethods.list({
+      customer: stripeCustomerId,
+      type: "card",
     });
-  } catch (err: any) {
-    return new Response(JSON.stringify({ ok: false, error: err?.message ?? String(err) }), {
+
+    // Return a safe, UI-friendly subset
+    const cards = pms.data.map((pm) => ({
+      id: pm.id,
+      brand: pm.card?.brand ?? null,
+      last4: pm.card?.last4 ?? null,
+      exp_month: pm.card?.exp_month ?? null,
+      exp_year: pm.card?.exp_year ?? null,
+    }));
+
+    return new Response(JSON.stringify({ cards }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err?.message ?? err) }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
+

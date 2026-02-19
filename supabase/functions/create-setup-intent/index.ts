@@ -1,57 +1,53 @@
-export const config = { auth: false };
-
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0";
+// supabase/functions/create-setup-intent/index.ts
+import Stripe from "https://esm.sh/stripe@16.12.0?target=deno";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+Deno.serve(async (req) => {
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecretKey) throw new Error("Missing STRIPE_SECRET_KEY");
+    const { stripeCustomerId } = await req.json();
+    if (!stripeCustomerId) {
+      return new Response(JSON.stringify({ error: "Missing stripeCustomerId" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const stripe = new Stripe(stripeSecretKey, { apiVersion: "2023-10-16" });
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) {
+      return new Response(JSON.stringify({ error: "Missing STRIPE_SECRET_KEY secret" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const { email } = await req.json();
-    if (!email) throw new Error("Missing email");
+    const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
 
-    // Find or create customer by email
-    const customers = await stripe.customers.list({ email, limit: 1 });
-    const customer =
-      customers.data.length > 0
-        ? customers.data[0]
-        : await stripe.customers.create({ email });
-
-    // Create SetupIntent so Stripe can tokenize a funding card for future use
-    const si = await stripe.setupIntents.create({
-      customer: customer.id,
-      usage: "off_session",
+    // Create a SetupIntent so Stripe can collect & save a payment method
+    const setupIntent = await stripe.setupIntents.create({
+      customer: stripeCustomerId,
       payment_method_types: ["card"],
-      metadata: {
-        type: "pashloc_funding_card",
-        email,
-      },
+      usage: "off_session",
     });
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        customerId: customer.id,
-        setupIntentId: si.id,
-        clientSecret: si.client_secret,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  } catch (e: any) {
-    return new Response(
-      JSON.stringify({ ok: false, error: e?.message || "Unknown error" }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ clientSecret: setupIntent.client_secret }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: String(err?.message ?? err) }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
 
