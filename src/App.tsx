@@ -1,22 +1,40 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Home from "./pages/Home";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Toaster } from "@/components/ui/toaster";
+
+import Navigation from "./components/Navigation";
+
+// Pages
+import Home from "./pages/Index";
 import PitchDeck from "./pages/PitchDeck";
-import MemberDashboard from "./pages/member/Dashboard";
+import Privacy from "./pages/Privacy";
+import MemberDashboard from "./pages/MemberDashboard";
 import FundingCardsPage from "./pages/member/FundingCards";
-import Header from "./components/Header";
-import Footer from "./components/Footer";
+import CheckoutSuccess from "./pages/checkout/CheckoutSuccess";
+import NotFound from "./pages/NotFound";
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Header />
+    <Router>
+      <Navigation />
+
       <Routes>
+        {/* Public */}
         <Route path="/" element={<Home />} />
-        <Route path="/pitch" element={<PitchDeck />} />
+        <Route path="/pitch-deck" element={<PitchDeck />} />
+        <Route path="/privacy" element={<Privacy />} />
+
+        {/* Member */}
         <Route path="/member" element={<MemberDashboard />} />
         <Route path="/member/funding" element={<FundingCardsPage />} />
+
+        {/* Checkout */}
+        <Route path="/checkout/success" element={<CheckoutSuccess />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
-      <Footer />
-    </BrowserRouter>
+
+      <Toaster />
+    </Router>
   );
 }
