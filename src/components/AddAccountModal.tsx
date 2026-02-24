@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { StripeCardSetup } from './StripeCardSetup';
-
+import StripeCardSetup from "./StripeCardSetup";
 interface AddAccountModalProps {
   isOpen: boolean;
   onClose: () => void;
