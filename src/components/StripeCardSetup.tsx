@@ -1,161 +1,117 @@
-import React, { useState } from 'react';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { stripePromise, isStripeConfigured, TEST_CARDS } from '../lib/stripe';
-import { Button } from './ui/button';
-import { Alert, AlertDescription } from './ui/alert';
-import { CreditCard, CheckCircle, AlertCircle, Loader2, Info } from 'lucide-react';
+import React, { useMemo, useState } from "react";
+import { Elements, CardElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 
-interface CardSetupFormProps {
-  onSuccess: (paymentMethod: any) => void;
-  onError: (error: string) => void;
-}
+/**
+ * StripeCardSetup
+ *
+ * This component uses CardElement (NOT PaymentElement).
+ * Stripe still requires Elements to be created with either:
+ *  - options.clientSecret (when using PaymentElement), OR
+ *  - options.mode ("payment" | "setup") for non-clientSecret flows.
+ *
+ * To prevent runtime IntegrationError, we always pass mode.
+ */
 
-const CardSetupForm: React.FC<CardSetupFormProps> = ({ onSuccess, onError }) => {
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY!);
+
+type Props = {
+  title?: string;
+  onCardReady?: () => void;
+  onSubmit?: (paymentMethodId: string) => Promise<void> | void;
+};
+
+function Inner({ title = "Add a card", onCardReady, onSubmit }: Props) {
   const stripe = useStripe();
   const elements = useElements();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [message, setMessage] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>("");
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-
+  const handleSubmit = async () => {
+    setError("");
     if (!stripe || !elements) {
-      onError('Stripe is not properly initialized. Please check your configuration.');
+      setError("Stripe is not ready yet.");
       return;
     }
 
-    setIsProcessing(true);
-    setMessage('');
-
-    const cardElement = elements.getElement(CardElement);
-
-    if (!cardElement) {
-      setIsProcessing(false);
-      onError('Card element not found');
+    const card = elements.getElement(CardElement);
+    if (!card) {
+      setError("Card element not found.");
       return;
     }
 
+    setBusy(true);
     try {
-      // Create payment method
-      const { error, paymentMethod } = await stripe.createPaymentMethod({
-        type: 'card',
-        card: cardElement,
+      // Create a PaymentMethod (client-side tokenization). No secret keys here.
+      const { paymentMethod, error: pmErr } = await stripe.createPaymentMethod({
+        type: "card",
+        card,
       });
 
-      if (error) {
-        console.error('Stripe error:', error);
-        onError(error.message || 'Card setup failed');
-        setMessage(error.message || 'Card setup failed');
-        setIsProcessing(false);
-        return;
-      }
+      if (pmErr) throw new Error(pmErr.message || "Failed to create payment method");
+      if (!paymentMethod?.id) throw new Error("No paymentMethod id returned");
 
-      if (paymentMethod) {
-        setMessage('Card added successfully!');
-        onSuccess(paymentMethod);
-      }
-      setIsProcessing(false);
-    } catch (err: any) {
-      console.error('Card setup error:', err);
-      onError(err.message || 'An unexpected error occurred');
-      setIsProcessing(false);
+      // Optional callback to hand off the PM id to your server/edge function
+      await onSubmit?.(paymentMethod.id);
+    } catch (e: any) {
+      setError(e?.message || "Failed to save card.");
+    } finally {
+      setBusy(false);
     }
   };
 
-  const cardElementOptions = {
-    style: {
-      base: {
-        fontSize: '16px',
-        color: '#ffffff',
-        '::placeholder': {
-          color: '#9ca3af',
-        },
-        backgroundColor: 'transparent',
-      },
-      invalid: {
-        color: '#ef4444',
-        iconColor: '#ef4444',
-      },
-    },
-    hidePostalCode: false,
-  };
-
   return (
-    <div className="space-y-4">
-      <Alert className="border-blue-600 bg-blue-900/20">
-        <Info className="h-4 w-4 text-blue-400" />
-        <AlertDescription className="text-white">
-          Use test card: {TEST_CARDS.VISA} with any future expiry date and CVC
-        </AlertDescription>
-      </Alert>
+    <div style={{ width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+        <h3 style={{ margin: 0 }}>{title}</h3>
+      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="bg-gray-700 p-4 rounded-lg border border-gray-600">
-          <CardElement options={cardElementOptions} />
+      <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)" }}>
+        <CardElement
+          onReady={() => onCardReady?.()}
+          options={{
+            style: {
+              base: {
+                color: "#ffffff",
+                fontSize: "16px",
+                "::placeholder": { color: "rgba(255,255,255,0.55)" },
+              },
+              invalid: { color: "#ff6b6b" },
+            },
+          }}
+        />
+      </div>
+
+      {error && (
+        <div style={{ marginTop: 10, color: "#ff6b6b", fontSize: 14 }}>
+          {error}
         </div>
-        
-        {message && (
-          <Alert className={message.includes('successfully') ? 'border-green-600 bg-green-900/20' : 'border-red-600 bg-red-900/20'}>
-            {message.includes('successfully') ? (
-              <CheckCircle className="h-4 w-4 text-green-400" />
-            ) : (
-              <AlertCircle className="h-4 w-4 text-red-400" />
-            )}
-            <AlertDescription className="text-white">{message}</AlertDescription>
-          </Alert>
-        )}
+      )}
 
-        <Button 
-          type="submit" 
-          disabled={!stripe || isProcessing}
-          className="w-full bg-blue-600 hover:bg-blue-700"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            <>
-              <CreditCard className="w-4 h-4 mr-2" />
-              Add Card
-            </>
-          )}
-        </Button>
-      </form>
+      <button
+        onClick={handleSubmit}
+        disabled={busy || !stripe}
+        style={{
+          marginTop: 14,
+          padding: "10px 14px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,0.18)",
+          background: "rgba(255,255,255,0.08)",
+          color: "#fff",
+          cursor: busy ? "not-allowed" : "pointer",
+        }}
+      >
+        {busy ? "Saving…" : "Save Card"}
+      </button>
     </div>
   );
-};
-
-// Configuration error component
-const StripeConfigError: React.FC = () => (
-  <Alert className="border-red-600 bg-red-900/20">
-    <AlertCircle className="h-4 w-4 text-red-400" />
-    <AlertDescription className="text-white">
-      Stripe is not configured. Please add your VITE_STRIPE_PUBLISHABLE_KEY to .env.local
-      <br />
-      <span className="text-sm text-gray-400 mt-2 block">
-        Get your key from: https://dashboard.stripe.com/test/apikeys
-      </span>
-    </AlertDescription>
-  </Alert>
-);
-
-interface StripeCardSetupProps {
-  onSuccess: (paymentMethod: any) => void;
-  onError: (error: string) => void;
 }
 
-export const StripeCardSetup: React.FC<StripeCardSetupProps> = ({ onSuccess, onError }) => {
-  // Check if Stripe is properly configured
-  if (!isStripeConfigured) {
-    return <StripeConfigError />;
-  }
-
-  // Production mode with real Stripe
+export default function StripeCardSetup(props: Props) {
+  const options = useMemo(() => ({ mode: "setup" as const }), []);
   return (
-    <Elements stripe={stripePromise}>
-      <CardSetupForm onSuccess={onSuccess} onError={onError} />
+    <Elements stripe={stripePromise} options={options}>
+      <Inner {...props} />
     </Elements>
   );
-};
+}
