@@ -1,103 +1,82 @@
-// src/components/Navigation.tsx
-import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabaseClient";
+import React from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useAppContext } from "@/contexts/AppContext";
 
-function NavLink({
-  to,
-  children,
-}: {
-  to: string;
-  children: React.ReactNode;
-}) {
-  const location = useLocation();
-  const isActive = location.pathname === to;
-
-  return (
-    <Link
-      to={to}
-      className={[
-        "text-sm font-medium transition-colors",
-        isActive ? "text-white" : "text-white/80 hover:text-white",
-      ].join(" ")}
-    >
-      {children}
-    </Link>
-  );
-}
-
-export function Navigation() {
+export default function Navigation() {
   const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { session, signOut } = useAppContext();
 
-  useEffect(() => {
-    // initial session
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-    });
+  const linkClass = ({ isActive }: { isActive: boolean }) =>
+    [
+      "rounded-lg px-3 py-2 text-sm font-medium transition",
+      isActive ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/5 hover:text-white",
+    ].join(" ");
 
-    // session changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const signOut = async () => {
-    setBusy(true);
-    await supabase.auth.signOut();
-    setBusy(false);
-    navigate("/");
+  const handleSignInClick = () => {
+    // Keep it dead-simple and reliable.
+    navigate("/sign-in");
   };
 
-  const goToAuth = () => {
-    // Single source of truth for login / membership
-    navigate("/member");
+  const handleSignOut = async () => {
+    try {
+      await signOut?.();
+    } catch (e) {
+      console.error("Sign out failed:", e);
+    } finally {
+      navigate("/");
+    }
   };
 
   return (
-    <header className="w-full border-b border-white/10 bg-black/30 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        {/* LEFT */}
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/50 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-6">
-          <Link to="/" className="text-lg font-semibold text-white">
+          <div
+            className="cursor-pointer text-base font-semibold tracking-tight text-white"
+            onClick={() => navigate("/")}
+          >
             PashLoc
-          </Link>
+          </div>
 
-          <nav className="hidden md:flex items-center gap-4">
-            <NavLink to="/">Home</NavLink>
-            <NavLink to="/pitch-deck">Pitch Deck</NavLink>
+          <nav className="flex items-center gap-2">
+            <NavLink to="/" className={linkClass} end>
+              Home
+            </NavLink>
 
-            {session && (
+            <NavLink to="/pitch-deck" className={linkClass}>
+              Pitch Deck
+            </NavLink>
+
+            {session ? (
               <>
-                <NavLink to="/member">Member Dashboard</NavLink>
-                <NavLink to="/member/funding">Funding Cards</NavLink>
+                <NavLink to="/member" className={linkClass}>
+                  Member Dashboard
+                </NavLink>
+
+                <NavLink to="/member/funding" className={linkClass}>
+                  Funding Cards
+                </NavLink>
               </>
-            )}
+            ) : null}
           </nav>
         </div>
 
-        {/* RIGHT */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {!session ? (
             <button
-              onClick={goToAuth}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+              type="button"
+              onClick={handleSignInClick}
+              className="rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-medium text-white shadow hover:opacity-95"
             >
               Sign In / Get Started
             </button>
           ) : (
             <button
-              onClick={signOut}
-              disabled={busy}
-              className="rounded-md border border-white/20 px-4 py-2 text-sm text-white hover:bg-white/10"
+              type="button"
+              onClick={handleSignOut}
+              className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/90 hover:bg-white/10"
             >
-              {busy ? "Signing out…" : "Sign Out"}
+              Sign Out
             </button>
           )}
         </div>
@@ -105,5 +84,3 @@ export function Navigation() {
     </header>
   );
 }
-
-export default Navigation;

@@ -1,59 +1,66 @@
-// supabase/functions/get-funding-cards/index.ts
-import Stripe from "https://esm.sh/stripe@16.12.0?target=deno";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
+  "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: corsHeaders,
+  });
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return json(200, { ok: true });
 
   try {
-    const { stripeCustomerId } = await req.json();
-    if (!stripeCustomerId) {
-      return new Response(JSON.stringify({ error: "Missing stripeCustomerId" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader) return json(401, { error: "Missing Authorization header" });
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json(500, { error: "Supabase env not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" });
     }
 
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeKey) {
-      return new Response(JSON.stringify({ error: "Missing STRIPE_SECRET_KEY secret" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
-
-    const pms = await stripe.paymentMethods.list({
-      customer: stripeCustomerId,
-      type: "card",
+    // One stable client: service-role + Authorization header
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      global: { headers: { Authorization: authHeader } },
     });
 
-    // Return a safe, UI-friendly subset
-    const cards = pms.data.map((pm) => ({
-      id: pm.id,
-      brand: pm.card?.brand ?? null,
-      last4: pm.card?.last4 ?? null,
-      exp_month: pm.card?.exp_month ?? null,
-      exp_year: pm.card?.exp_year ?? null,
-    }));
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) return json(401, { error: "Unauthenticated" });
 
-    return new Response(JSON.stringify({ cards }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Ensure member exists
+    const { error: memberErr } = await supabase
+      .from("members")
+      .upsert(
+        {
+          user_id: user.id,
+          email: user.email,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+    if (memberErr) return json(500, { error: memberErr.message });
+
+    const { data, error } = await supabase
+      .from("funding_cards")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) return json(500, { error: error.message });
+
+    return json(200, { cards: data ?? [] });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err?.message ?? err) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json(500, { error: String(err) });
   }
 });
-

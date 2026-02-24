@@ -1,129 +1,87 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
+  "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 };
 
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: corsHeaders,
+  });
+}
+
 serve(async (req) => {
-  // --- CORS preflight ---
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return json(200, { ok: true });
 
   try {
-    // --- Auth ---
     const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing Authorization header" }),
-        { status: 401, headers: corsHeaders }
-      );
-    }
+    if (!authHeader) return json(401, { error: "Missing Authorization header" });
 
-    const jwt = authHeader.replace("Bearer ", "");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY")!;
-
-    const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2023-10-16",
-    });
-
-    // --- Get user from Supabase ---
-    const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        apikey: serviceKey,
-      },
-    });
-
-    if (!userRes.ok) {
-      throw new Error("Invalid Supabase session");
-    }
-
-    const user = await userRes.json();
-
-    // --- Parse body ---
-    const { paymentMethodId } = await req.json();
-    if (!paymentMethodId) {
-      return new Response(
-        JSON.stringify({ error: "Missing paymentMethodId" }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-    // --- Get member record ---
-    const memberRes = await fetch(
-      `${supabaseUrl}/rest/v1/members?user_id=eq.${user.id}&select=*`,
-      {
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-        },
-      }
-    );
-
-    const members = await memberRes.json();
-    if (!members.length) {
-      throw new Error("Member record not found");
-    }
-
-    const member = members[0];
-
-    // --- Ensure Stripe customer ---
-    let customerId = member.stripe_customer_id;
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: { supabase_user_id: user.id },
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json(500, {
+        error: "Supabase env not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)",
       });
-
-      customerId = customer.id;
-
-      await fetch(
-        `${supabaseUrl}/rest/v1/members?id=eq.${member.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            apikey: serviceKey,
-            Authorization: `Bearer ${serviceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            stripe_customer_id: customerId,
-          }),
-        }
-      );
     }
 
-    // --- Attach payment method ---
-    await stripe.paymentMethods.attach(paymentMethodId, {
-      customer: customerId,
+    // Service role client, but user identity still comes from Authorization JWT
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      global: { headers: { Authorization: authHeader } },
     });
 
-    // --- Set default ---
-    await stripe.customers.update(customerId, {
-      invoice_settings: {
-        default_payment_method: paymentMethodId,
-      },
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser();
+
+    if (authErr || !user) return json(401, { error: "Unauthenticated" });
+
+    const body = await req.json().catch(() => ({} as any));
+
+    // Accept multiple payload shapes (frontend may send camelCase)
+    const payment_method_id =
+      body?.payment_method_id ||
+      body?.paymentMethodId ||
+      body?.payment_method ||
+      body?.paymentMethodID;
+
+    if (!payment_method_id) {
+      return json(400, {
+        error: "Missing payment_method_id (accepted: payment_method_id or paymentMethodId)",
+      });
+    }
+
+    // Ensure member row exists
+    const { error: memberErr } = await supabase
+      .from("members")
+      .upsert(
+        {
+          user_id: user.id,
+          email: user.email,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+    if (memberErr) return json(500, { error: memberErr.message });
+
+    // Save funding card
+    const { error: insertErr } = await supabase.from("funding_cards").insert({
+      user_id: user.id,
+      payment_method_id,
     });
 
-    return new Response(
-      JSON.stringify({ ok: true }),
-      { headers: corsHeaders }
-    );
+    if (insertErr) return json(500, { error: insertErr.message });
+
+    return json(200, { success: true });
   } catch (err) {
-    console.error("save-funding-card error:", err);
-    return new Response(
-      JSON.stringify({ error: err.message }),
-      { status: 500, headers: corsHeaders }
-    );
+    return json(500, { error: String(err) });
   }
 });
-

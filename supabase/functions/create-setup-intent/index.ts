@@ -1,99 +1,162 @@
-import Stripe from "https://esm.sh/stripe@14.25.0?target=deno";
+// supabase/functions/create-setup-intent/index.ts
+// Creates a Stripe SetupIntent for the authenticated user.
+// ALSO guarantees the user has a Stripe Customer ID stored in public.profiles.
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
+type Json = Record<string, unknown>;
+
+function corsHeaders(origin: string | null) {
+  return {
+    "Access-Control-Allow-Origin": origin ?? "*",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+function json(status: number, body: Json, origin: string | null) {
+  return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
+async function stripeCreateCustomer(stripeSecretKey: string, email: string | null, supabaseUid: string) {
+  const params = new URLSearchParams();
+  if (email) params.set("email", email);
+  params.set("metadata[supabase_uid]", supabaseUid);
+
+  const res = await fetch("https://api.stripe.com/v1/customers", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${stripeSecretKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`Stripe customer create failed: ${data?.error?.message ?? res.statusText}`);
+  }
+  return data as { id: string };
+}
+
+async function stripeCreateSetupIntent(stripeSecretKey: string, customerId: string) {
+  const params = new URLSearchParams();
+  params.set("customer", customerId);
+  params.set("payment_method_types[]", "card");
+
+  const res = await fetch("https://api.stripe.com/v1/setup_intents", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${stripeSecretKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(`Stripe setup_intent failed: ${data?.error?.message ?? res.statusText}`);
+  }
+  return data as { id: string; client_secret: string };
+}
+
+async function ensureStripeCustomerId(args: {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  supabaseServiceRoleKey: string;
+  stripeSecretKey: string;
+  authHeader: string;
+}) {
+  const { supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey, stripeSecretKey, authHeader } = args;
+
+  // Client for auth (user-scoped)
+  const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: userData, error: userErr } = await supabaseAuth.auth.getUser();
+  if (userErr || !userData?.user) {
+    throw new Error("Not signed in (invalid or missing session token).");
+  }
+  const user = userData.user;
+
+  // Service client for DB writes
+  const supabaseSvc = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+  // Load or create profile row
+  const { data: profile, error: profErr } = await supabaseSvc
+    .from("profiles")
+    .select("id,email,stripe_customer_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profErr) throw new Error(`Failed to read profile: ${profErr.message}`);
+
+  let stripeCustomerId = profile?.stripe_customer_id ?? null;
+
+  if (!profile) {
+    const { error: insErr } = await supabaseSvc
+      .from("profiles")
+      .insert([{ id: user.id, email: user.email ?? null, stripe_customer_id: null }]);
+    if (insErr) throw new Error(`Failed to create profile: ${insErr.message}`);
+  }
+
+  if (!stripeCustomerId) {
+    const created = await stripeCreateCustomer(stripeSecretKey, user.email ?? null, user.id);
+    stripeCustomerId = created.id;
+
+    const { error: updErr } = await supabaseSvc
+      .from("profiles")
+      .update({ stripe_customer_id: stripeCustomerId, email: user.email ?? null })
+      .eq("id", user.id);
+
+    if (updErr) throw new Error(`Failed to save stripe_customer_id: ${updErr.message}`);
+  }
+
+  return { userId: user.id, email: user.email ?? null, stripeCustomerId };
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const origin = req.headers.get("Origin");
+
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: corsHeaders(origin) });
+  }
 
   try {
-    const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
-    const SB_URL = Deno.env.get("SB_URL");
-    const SB_SERVICE_ROLE_KEY = Deno.env.get("SB_SERVICE_ROLE_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const authHeader = req.headers.get("Authorization") ?? "";
 
-    if (!STRIPE_SECRET_KEY) return json({ error: "Missing STRIPE_SECRET_KEY" }, 500);
-    if (!SB_URL) return json({ error: "Missing SB_URL" }, 500);
-    if (!SB_SERVICE_ROLE_KEY) return json({ error: "Missing SB_SERVICE_ROLE_KEY" }, 500);
-
-    const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
-
-    const body = await req.json().catch(() => ({}));
-    const userId = body?.userId ?? null;
-    const email = body?.email ?? null;
-
-    if (!userId && !email) return json({ error: "Provide userId or email" }, 400);
-
-    const identity = String(userId ?? email);
-
-    const sbRes = await fetch(
-      `${SB_URL}/rest/v1/members?select=id,user_id,stripe_customer_id&user_id=eq.${encodeURIComponent(identity)}`,
-      {
-        headers: {
-          apikey: SB_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${SB_SERVICE_ROLE_KEY}`,
-        },
-      },
-    );
-
-    const rows = await sbRes.json();
-    const member = Array.isArray(rows) ? rows[0] : null;
-
-    let stripeCustomerId = member?.stripe_customer_id ?? null;
-
-    if (!stripeCustomerId) {
-      const customer = await stripe.customers.create({
-        email: email ?? undefined,
-        metadata: { user_id: identity, source: "pashloc" },
-      });
-
-      stripeCustomerId = customer.id;
-
-      const upsertRes = await fetch(`${SB_URL}/rest/v1/members`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SB_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${SB_SERVICE_ROLE_KEY}`,
-          Prefer: "resolution=merge-duplicates",
-        },
-        body: JSON.stringify({
-          user_id: identity,
-          stripe_customer_id: stripeCustomerId,
-          membership_status: "active",
-        }),
-      });
-
-      if (!upsertRes.ok) {
-        const t = await upsertRes.text();
-        return json({ error: "Failed to upsert member", details: t }, 500);
-      }
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+      throw new Error("Missing Supabase env (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY).");
     }
+    if (!stripeSecretKey) throw new Error("Missing STRIPE_SECRET_KEY secret.");
+    if (!authHeader.startsWith("Bearer ")) throw new Error("Missing Authorization: Bearer <token> header.");
 
-    const setupIntent = await stripe.setupIntents.create({
-      customer: stripeCustomerId,
-      usage: "off_session",
-      payment_method_types: ["card"],
-      metadata: { user_id: identity, plan: "premium" },
+    const ensured = await ensureStripeCustomerId({
+      supabaseUrl,
+      supabaseAnonKey,
+      supabaseServiceRoleKey,
+      stripeSecretKey,
+      authHeader,
     });
 
-    return json({
+    const setupIntent = await stripeCreateSetupIntent(stripeSecretKey, ensured.stripeCustomerId);
+
+    return json(200, {
       ok: true,
-      customerId: stripeCustomerId,
+      stripeCustomerId: ensured.stripeCustomerId,
       setupIntentId: setupIntent.id,
       clientSecret: setupIntent.client_secret,
-    });
-  } catch (err) {
-    return json({ ok: false, error: String(err?.message ?? err) }, 500);
+    }, origin);
+  } catch (e) {
+    return json(400, { ok: false, error: (e as Error).message }, origin);
   }
 });
-

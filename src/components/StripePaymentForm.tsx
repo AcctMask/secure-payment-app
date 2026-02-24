@@ -43,8 +43,7 @@ function Inner() {
 
 export default function StripePaymentForm() {
   return (
-    <Elements stripe={stripePromise} options={{ mode: "payment" }}>
-      <Inner />
+<Elements stripe={stripePromise}>      <Inner />
     </Elements>
   );
 }

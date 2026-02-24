@@ -4,11 +4,8 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 
-// IMPORTANT:
-// This must wrap *everything* that calls useAppContext.
-// Your blank page error ("useAppContext must be used within an AppProvider")
-// happens when a route renders outside this provider.
-import { AppProvider } from "./contexts/AppContext";
+// IMPORTANT: Wrap the entire app in AppProvider exactly once (here).
+import { AppProvider } from "@/contexts/AppContext";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
