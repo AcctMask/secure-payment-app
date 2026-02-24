@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { stripePromise } from '../lib/stripe';
-import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Alert, AlertDescription } from './ui/alert';
-import { CreditCard, CheckCircle, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import React, { useState } from "react";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { stripePromise } from "../lib/stripe";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Alert, AlertDescription } from "./ui/alert";
+import { CreditCard, AlertCircle, CheckCircle } from "lucide-react";
 
 interface CheckoutFormProps {
   amount: number;
@@ -16,120 +15,104 @@ interface CheckoutFormProps {
 const CheckoutForm: React.FC<CheckoutFormProps> = ({ amount, onSuccess, onError }) => {
   const stripe = useStripe();
   const elements = useElements();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [message, setMessage] = useState<string>('');
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const [processing, setProcessing] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
     if (!stripe || !elements) {
+      onError("Stripe not ready");
       return;
     }
-
-    setIsProcessing(true);
-    setMessage('');
 
     const cardElement = elements.getElement(CardElement);
-
     if (!cardElement) {
-      setIsProcessing(false);
+      onError("Card element not found");
       return;
     }
 
+    setProcessing(true);
+    setMessage(null);
+
     try {
-      // Create payment intent on backend
-      const { data, error: functionError } = await supabase.functions.invoke('create-payment-intent', {
-        body: {
-          amount,
-          currency: 'usd',
-          metadata: {
-            type: 'membership',
-            amount: amount.toString()
-          }
-        }
+      // NOTE: This assumes you already created a PaymentIntent server-side
+      // and returned its client_secret
+      const res = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
       });
 
-      if (functionError) {
-        throw new Error(functionError.message);
+      const { clientSecret, error } = await res.json();
+      if (error || !clientSecret) {
+        throw new Error(error || "Missing client secret");
       }
 
-      const { clientSecret } = data;
-
-      // Confirm payment with Stripe
-      const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+      const result = await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
           card: cardElement,
-        }
+        },
       });
 
-      if (confirmError) {
-        onError(confirmError.message || 'Payment failed');
-      } else if (paymentIntent?.status === 'succeeded') {
-        setMessage('Payment successful!');
-        onSuccess(paymentIntent);
-      } else {
-        onError('Payment was not successful');
+      if (result.error) {
+        throw new Error(result.error.message || "Payment failed");
+      }
+
+      if (result.paymentIntent?.status === "succeeded") {
+        setSuccess(true);
+        onSuccess(result.paymentIntent);
       }
     } catch (err: any) {
-      onError(err.message || 'Payment processing failed');
+      const msg = err.message || "Payment error";
+      setMessage(msg);
+      onError(msg);
+    } finally {
+      setProcessing(false);
     }
-
-    setIsProcessing(false);
-  };
-
-  const cardElementOptions = {
-    style: {
-      base: {
-        fontSize: '16px',
-        color: '#ffffff',
-        '::placeholder': {
-          color: '#9ca3af',
-        },
-        backgroundColor: 'transparent',
-      },
-      invalid: {
-        color: '#ef4444',
-        iconColor: '#ef4444',
-      },
-    },
-    hidePostalCode: true,
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="bg-gray-700 p-4 rounded-lg border border-gray-600">
-        <CardElement options={cardElementOptions} />
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="p-3 bg-gray-900 rounded border border-gray-700">
+        <CardElement
+          options={{
+            style: {
+              base: {
+                color: "#ffffff",
+                fontSize: "16px",
+                "::placeholder": { color: "#9ca3af" },
+              },
+              invalid: { color: "#f87171" },
+            },
+          }}
+        />
       </div>
-      
+
       {message && (
-        <Alert className={message.includes('successful') ? 'border-green-600 bg-green-900/20' : 'border-red-600 bg-red-900/20'}>
-          {message.includes('successful') ? (
-            <CheckCircle className="h-4 w-4 text-green-400" />
-          ) : (
-            <AlertCircle className="h-4 w-4 text-red-400" />
-          )}
-          <AlertDescription className="text-white">{message}</AlertDescription>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{message}</AlertDescription>
         </Alert>
       )}
 
-      <Button 
-        type="submit" 
-        disabled={!stripe || isProcessing}
-        className="w-full bg-blue-600 hover:bg-blue-700"
-      >
-        {isProcessing ? 'Processing...' : `Pay $${amount.toFixed(2)}`}
+      {success && (
+        <Alert className="border-green-700 bg-green-900/30 text-green-400">
+          <CheckCircle className="h-4 w-4" />
+          <AlertDescription>Payment successful</AlertDescription>
+        </Alert>
+      )}
+
+      <Button type="submit" disabled={processing || !stripe} className="w-full">
+        {processing ? "Processing…" : `Pay $${(amount / 100).toFixed(2)}`}
       </Button>
     </form>
   );
 };
 
-interface StripeCheckoutProps {
-  amount: number;
-  onSuccess: (paymentIntent: any) => void;
-  onError: (error: string) => void;
-}
-
-export const StripeCheckout: React.FC<StripeCheckoutProps> = ({ amount, onSuccess, onError }) => {
+export default function StripeCheckout(props: CheckoutFormProps) {
   return (
     <Card className="bg-gray-800 border-gray-700">
       <CardHeader>
@@ -138,21 +121,22 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({ amount, onSucces
           Secure Payment
         </CardTitle>
       </CardHeader>
+
       <CardContent>
-        <Elements stripe={stripePromise}>
-          <CheckoutForm amount={amount} onSuccess={onSuccess} onError={onError} />
+        <Elements stripe={stripePromise} options={{ mode: "payment" }}>
+          <CheckoutForm {...props} />
         </Elements>
-        
+
         <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-700">
-          <h4 className="text-sm font-medium text-blue-400 mb-2">Test Card Numbers:</h4>
+          <h4 className="text-sm font-medium text-blue-400 mb-2">Test Card Numbers</h4>
           <div className="text-xs text-gray-300 space-y-1">
-            <div>• 4242 4242 4242 4242 (Visa - Success)</div>
+            <div>• 4242 4242 4242 4242 (Success)</div>
             <div>• 4000 0000 0000 0002 (Declined)</div>
-            <div>• Use any future date for expiry</div>
-            <div>• Use any 3-digit CVC</div>
+            <div>• Any future expiry date</div>
+            <div>• Any 3-digit CVC</div>
           </div>
         </div>
       </CardContent>
     </Card>
   );
-};
+}
