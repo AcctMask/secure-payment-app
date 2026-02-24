@@ -1,4 +1,6 @@
-import { Routes, Route } from "react-router-dom";
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+
 import AppLayout from "./components/AppLayout";
 
 import Index from "./pages/Index";
@@ -6,16 +8,14 @@ import PitchDeck from "./pages/PitchDeck";
 import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 import MemberDashboard from "./pages/MemberDashboard";
-
-// Funding Cards page
 import FundingCardsPage from "./pages/member/FundingCards";
-
-// If you have these pages, keep them. If build fails saying a file is missing,
-// tell me the exact error line and I’ll adjust.
-import CheckoutSuccess from "./pages/checkout/CheckoutSuccess";
-import CheckoutSuccessPage from "./pages/CheckoutSuccess";
 import Success from "./pages/Success";
+import CheckoutSuccess from "./pages/checkout/CheckoutSuccess";
+import SystemReadiness from "./pages/SystemReadiness";
 
+// IMPORTANT:
+// Do NOT render <Navigation /> here.
+// AppLayout renders Navigation once for all pages.
 export default function App() {
   return (
     <Routes>
@@ -24,13 +24,15 @@ export default function App() {
         <Route path="/pitch-deck" element={<PitchDeck />} />
         <Route path="/privacy" element={<Privacy />} />
 
-        <Route path="/member" element={<MemberDashboard />} />
+        {/* Member area */}
+        <Route path="/member" element={<Navigate to="/member/dashboard" replace />} />
+        <Route path="/member/dashboard" element={<MemberDashboard />} />
         <Route path="/member/funding" element={<FundingCardsPage />} />
 
-        {/* Optional existing routes */}
-        <Route path="/checkout/success" element={<CheckoutSuccess />} />
-        <Route path="/checkout-success" element={<CheckoutSuccessPage />} />
+        {/* Existing pages */}
         <Route path="/success" element={<Success />} />
+        <Route path="/checkout/success" element={<CheckoutSuccess />} />
+        <Route path="/system-readiness" element={<SystemReadiness />} />
 
         <Route path="*" element={<NotFound />} />
       </Route>
