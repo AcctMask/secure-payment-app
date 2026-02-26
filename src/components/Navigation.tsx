@@ -12,10 +12,7 @@ export default function Navigation() {
       isActive ? "bg-white/10 text-white" : "text-white/80 hover:bg-white/5 hover:text-white",
     ].join(" ");
 
-  const handleSignInClick = () => {
-    // Keep it dead-simple and reliable.
-    navigate("/sign-in");
-  };
+  const handleSignInClick = () => navigate("/sign-in");
 
   const handleSignOut = async () => {
     try {
@@ -54,7 +51,11 @@ export default function Navigation() {
                 </NavLink>
 
                 <NavLink to="/member/funding" className={linkClass}>
-                  Funding Cards
+                  Funding Source
+                </NavLink>
+
+                <NavLink to="/member/pashloc" className={linkClass}>
+                  PashLoc Cards
                 </NavLink>
               </>
             ) : null}

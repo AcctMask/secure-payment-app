@@ -1,61 +1,66 @@
 import React, { useState } from "react";
 import { Elements, CardElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
+import { CreditCard } from "lucide-react";
+
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Button } from "./ui/button";
+
 import { supabase } from "@/lib/supabase";
 
-const stripePromise = loadStripe(
-  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY!
-);
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
 
-interface CheckoutFormProps {
-  amount: number; // cents
-  onSuccess?: () => void;
+type Props = {
+  amount: number; // dollars (or whatever you’ve been passing in)
+  onSuccess?: (paymentIntent: any) => void;
   onError?: (message: string) => void;
-}
+};
 
-function CheckoutForm({ amount, onSuccess, onError }: CheckoutFormProps) {
+function CheckoutForm({ amount, onSuccess, onError }: Props) {
   const stripe = useStripe();
   const elements = useElements();
 
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [message, setMessage] = useState<string>("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setMessage("");
 
-    if (!stripe || !elements) {
-      setError("Stripe not ready.");
-      return;
-    }
+    if (!stripe || !elements) return;
 
     const card = elements.getElement(CardElement);
     if (!card) {
-      setError("Card element not found.");
+      const m = "Card form not ready. Please refresh and try again.";
+      setMessage(m);
+      onError?.(m);
       return;
     }
 
-    setBusy(true);
+    setIsProcessing(true);
 
     try {
-      // 1️⃣ Create PaymentIntent on server (Edge Function)
-      const { data, error: fnError } = await supabase.functions.invoke(
-        "create-payment-intent",
-        {
-          body: { amount },
-        }
-      );
+      // Create PaymentIntent via Supabase Edge Function
+      // NOTE: This assumes you have an edge function named "create-payment-intent".
+      // If yours is named differently, tell me the exact function name and I’ll adjust.
+      const amountCents = Math.round(Number(amount) * 100);
 
-      if (fnError) throw fnError;
-      if (!data?.client_secret) {
-        throw new Error("Missing client_secret from payment intent.");
+      const { data, error } = await supabase.functions.invoke("create-payment-intent", {
+        body: {
+          amount: amountCents,
+          currency: "usd",
+        },
+      });
+
+      if (error) throw error;
+      const clientSecret = (data as any)?.clientSecret || (data as any)?.client_secret;
+      if (!clientSecret) {
+        throw new Error("Missing clientSecret from create-payment-intent response.");
       }
 
-      // 2️⃣ Confirm payment with CardElement
-      const result = await stripe.confirmCardPayment(data.client_secret, {
-        payment_method: {
-          card,
-        },
+      const result = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card },
       });
 
       if (result.error) {
@@ -63,68 +68,76 @@ function CheckoutForm({ amount, onSuccess, onError }: CheckoutFormProps) {
       }
 
       if (result.paymentIntent?.status === "succeeded") {
-        onSuccess?.();
+        onSuccess?.(result.paymentIntent);
       } else {
-        throw new Error("Payment did not succeed.");
+        onSuccess?.(result.paymentIntent);
       }
     } catch (err: any) {
-      const msg = err?.message || "Payment error.";
-      setError(msg);
-      onError?.(msg);
+      const m = err?.message || "Payment failed.";
+      console.error("StripeCheckout error:", err);
+      setMessage(m);
+      onError?.(m);
     } finally {
-      setBusy(false);
+      setIsProcessing(false);
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="rounded-lg border border-white/15 bg-white/5 p-3">
+      <div className="rounded-lg border border-white/10 bg-white/5 p-4">
         <CardElement
           options={{
-            hidePostalCode: true,
             style: {
               base: {
-                color: "#ffffff",
                 fontSize: "16px",
-                "::placeholder": { color: "#9ca3af" },
+                color: "#ffffff",
+                "::placeholder": { color: "rgba(255,255,255,0.55)" },
               },
-              invalid: { color: "#f87171" },
+              invalid: { color: "#ff6b6b" },
             },
           }}
         />
       </div>
 
-      {error && (
-        <div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-          {error}
-        </div>
-      )}
+      {message ? (
+        <Alert className="border-red-500/30 bg-red-500/10 text-white">
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      ) : null}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-3 text-sm font-semibold text-white shadow hover:opacity-95 disabled:opacity-60"
-      >
-        {busy ? "Processing…" : "Pay Now"}
-      </button>
+      <Button type="submit" disabled={!stripe || isProcessing} className="w-full">
+        {isProcessing ? "Processing..." : `Pay $${Number(amount).toFixed(2)}`}
+      </Button>
     </form>
   );
 }
 
-interface StripeCheckoutProps {
-  amount: number; // cents
-  onSuccess?: () => void;
-  onError?: (message: string) => void;
-}
-
-export default function StripeCheckout({
-  amount,
-  onSuccess,
-  onError,
-}: StripeCheckoutProps) {
+export default function StripeCheckout(props: Props) {
   return (
-    <Elements stripe={stripePromise}>
-      <CheckoutForm amount={amount} onSuccess={onSuccess} onError={onError} />
-    </Elements>
+    <Card className="bg-gray-800 border-gray-700">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-white">
+          <CreditCard className="w-5 h-5" />
+          Secure Payment
+        </CardTitle>
+      </CardHeader>
+
+      <CardContent>
+        {/* IMPORTANT: No "mode: payment" options here — avoids currency/amount integration error */}
+        <Elements stripe={stripePromise}>
+          <CheckoutForm {...props} />
+        </Elements>
+
+        <div className="mt-6 p-4 bg-blue-900/30 rounded-lg border border-blue-700">
+          <h4 className="text-sm font-medium text-blue-400 mb-2">Test Card Numbers:</h4>
+          <div className="text-xs text-gray-300 space-y-1">
+            <div>• 4242 4242 4242 4242 (Visa - Success)</div>
+            <div>• 4000 0000 0000 0002 (Declined)</div>
+            <div>• Use any future date for expiry</div>
+            <div>• Use any 3-digit CVC</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

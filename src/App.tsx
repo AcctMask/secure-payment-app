@@ -9,6 +9,7 @@ import NotFound from "@/pages/NotFound";
 
 import MemberDashboard from "@/pages/MemberDashboard";
 import FundingCardsPage from "@/pages/member/FundingCards";
+import PashLocCardsPage from "@/pages/member/PashLocCards";
 
 import SignIn from "@/pages/SignIn";
 
@@ -24,6 +25,9 @@ export default function App() {
 
         <Route path="/member" element={<MemberDashboard />} />
         <Route path="/member/funding" element={<FundingCardsPage />} />
+
+        {/* New: keep concepts separate */}
+        <Route path="/member/pashloc" element={<PashLocCardsPage />} />
 
         <Route path="*" element={<NotFound />} />
       </Route>
