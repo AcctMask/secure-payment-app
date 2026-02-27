@@ -1,139 +1,189 @@
 import React, { useMemo, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
-  CardElement,
+  PaymentElement,
   useElements,
   useStripe,
 } from "@stripe/react-stripe-js";
+import type { StripeElementsOptions } from "@stripe/stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY!);
+type StripeMode = "setup" | "payment";
 
-/**
- * This component is intentionally "safe":
- * - It does NOT use Elements `mode: "payment"` (which requires currency/amount and can crash if missing).
- * - It uses the classic CardElement + confirmCardPayment flow.
- *
- * You can keep it in the repo without it breaking Funding Cards routes.
- * When you’re ready to implement payments, wire the `/api/create-payment-intent` endpoint (or a Supabase Edge function)
- * to return `{ clientSecret }`.
- */
+type InnerProps = {
+  mode: StripeMode;
+  submitLabel?: string;
+  returnUrl?: string;
+  onSuccess?: () => void;
+};
 
-function InnerPaymentForm() {
+function InnerStripePaymentForm({
+  mode,
+  submitLabel,
+  returnUrl,
+  onSuccess,
+}: InnerProps) {
   const stripe = useStripe();
   const elements = useElements();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
 
-  async function submit() {
+  const finalLabel =
+    submitLabel ?? (mode === "setup" ? "Save card" : "Pay now");
+
+  const submit = async () => {
     setError(null);
-    setStatus(null);
 
     if (!stripe || !elements) {
-      setError("Stripe is still loading. Try again in a moment.");
-      return;
-    }
-
-    const card = elements.getElement(CardElement);
-    if (!card) {
-      setError("Card input not ready. Please refresh and try again.");
+      setError("Stripe is still loading. Please try again in a moment.");
       return;
     }
 
     setBusy(true);
     try {
-      // IMPORTANT: This endpoint is a placeholder.
-      // Implement later (server/edge) to create a PaymentIntent and return clientSecret.
-      const res = await fetch("/api/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Example payload; adjust when you implement real checkout
-        body: JSON.stringify({ amount: 1999, currency: "usd" }),
-      });
-
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`Create PaymentIntent failed: ${res.status} ${t}`);
-      }
-
-      const data = (await res.json()) as { clientSecret?: string };
-      if (!data.clientSecret) {
-        throw new Error("Missing clientSecret from /api/create-payment-intent");
-      }
-
-      const result = await stripe.confirmCardPayment(data.clientSecret, {
-        payment_method: { card },
-      });
+      // NOTE:
+      // - Funding source = SetupIntent => confirmSetup (no currency/amount needed)
+      // - Checkout = PaymentIntent => confirmPayment (requires amount/currency on server)
+      const result =
+        mode === "setup"
+          ? await stripe.confirmSetup({
+              elements,
+              confirmParams: returnUrl ? { return_url: returnUrl } : undefined,
+              redirect: returnUrl ? "if_required" : "if_required",
+            })
+          : await stripe.confirmPayment({
+              elements,
+              confirmParams: returnUrl ? { return_url: returnUrl } : undefined,
+              redirect: returnUrl ? "if_required" : "if_required",
+            });
 
       if (result.error) {
-        throw new Error(result.error.message || "Payment failed.");
+        setError(result.error.message ?? "Something went wrong.");
+        return;
       }
 
-      if (result.paymentIntent?.status === "succeeded") {
-        setStatus("Payment succeeded.");
-      } else {
-        setStatus(`Payment status: ${result.paymentIntent?.status ?? "unknown"}`);
-      }
+      // If redirect is required, Stripe will handle it.
+      // If not required, we get here and can notify parent.
+      onSuccess?.();
     } catch (e: any) {
-      setError(e?.message || "Something went wrong.");
+      setError(e?.message ?? "Unexpected error.");
     } finally {
       setBusy(false);
     }
-  }
+  };
 
   return (
-    <div className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 p-6 text-white">
-      <h3 className="text-lg font-semibold">Test Payment</h3>
-      <p className="mt-1 text-sm text-white/70">
-        This is a safe placeholder component. It should not impact Funding Cards.
-      </p>
-
-      <div className="mt-4 rounded-lg border border-white/15 bg-black/20 p-3">
-        <CardElement
-          options={{
-            style: {
-              base: {
-                color: "#ffffff",
-                fontSize: "16px",
-                "::placeholder": { color: "#b8b8c7" },
-              },
-              invalid: { color: "#ff6b6b" },
-            },
-          }}
-        />
+    <div className="space-y-4">
+      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+        <PaymentElement />
       </div>
 
       <button
+        type="button"
         onClick={submit}
         disabled={busy || !stripe || !elements}
-        className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-medium text-white shadow hover:opacity-95 disabled:opacity-50"
+        className="w-full rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-medium text-white shadow hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {busy ? "Processing…" : "Submit"}
+        {busy ? "Processing…" : finalLabel}
       </button>
 
       {error ? (
-        <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           {error}
-        </div>
-      ) : null}
-
-      {status ? (
-        <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
-          {status}
         </div>
       ) : null}
     </div>
   );
 }
 
-export default function StripePaymentForm() {
-  // No `mode: "payment"` here — avoids the currency/amount integration crash.
-  const options = useMemo(() => ({}), []);
+export type StripePaymentFormProps = {
+  /**
+   * REQUIRED: clientSecret from your server (SetupIntent or PaymentIntent).
+   * Funding source (save card) should always be SetupIntent clientSecret.
+   */
+  clientSecret: string;
+
+  /**
+   * Defaults to "setup" to prevent payment-mode config bugs in Funding Source.
+   * Only use "payment" when doing real checkout (PaymentIntent).
+   */
+  mode?: StripeMode;
+
+  /**
+   * Optional: where Stripe should return after any 3DS redirect.
+   * For local dev: `${window.location.origin}/member/dashboard` (or wherever you want)
+   */
+  returnUrl?: string;
+
+  /**
+   * Optional: button label
+   */
+  submitLabel?: string;
+
+  /**
+   * Optional callback when Stripe confirms without redirect
+   */
+  onSuccess?: () => void;
+};
+
+const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
+  | string
+  | undefined;
+
+const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
+
+export default function StripePaymentForm({
+  clientSecret,
+  mode = "setup",
+  returnUrl,
+  submitLabel,
+  onSuccess,
+}: StripePaymentFormProps) {
+  const options: StripeElementsOptions = useMemo(() => {
+    // IMPORTANT:
+    // - DO NOT pass `mode: "payment"` here for funding cards.
+    // - For SetupIntent you only need clientSecret + appearance.
+    return {
+      clientSecret,
+      appearance: {
+        theme: "night",
+      },
+    };
+  }, [clientSecret]);
+
+  if (!publishableKey) {
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        Missing <code>VITE_STRIPE_PUBLISHABLE_KEY</code> in your environment.
+      </div>
+    );
+  }
+
+  if (!stripePromise) {
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        Stripe failed to initialize (publishable key issue).
+      </div>
+    );
+  }
+
+  if (!clientSecret) {
+    return (
+      <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+        Loading…
+      </div>
+    );
+  }
+
   return (
     <Elements stripe={stripePromise} options={options}>
-      <InnerPaymentForm />
+      <InnerStripePaymentForm
+        mode={mode}
+        submitLabel={submitLabel}
+        returnUrl={returnUrl}
+        onSuccess={onSuccess}
+      />
     </Elements>
   );
 }
