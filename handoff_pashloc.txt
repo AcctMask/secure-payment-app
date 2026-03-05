@@ -1371,3 +1371,6 @@ VITE_STRIPE_PUBLISHABLE_KEY=REDACTED
 # Price IDs (leave blank for now unless your UI requires them)
 VITE_STRIPE_PREMIUM_PRICE_ID=REDACTED
 VITE_STRIPE_PRO_PRICE_ID=REDACTED
+cd ~/Desktop/contractor-autopilot
+nano contractor_navigator.txt
+
