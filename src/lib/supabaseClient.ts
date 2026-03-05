@@ -1,6 +1,19 @@
-// src/lib/supabaseClient.ts
-// Compatibility shim for imports expecting `src/lib/supabaseClient`.
-// We keep the real client in `src/lib/supabase.ts`.
+import { createClient } from "@supabase/supabase-js";
 
-export * from "./supabase";
-export { supabase as default } from "./supabase";
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    "Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Check your .env.local (or Vercel env vars)."
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: "pkce",
+  },
+});

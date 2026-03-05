@@ -1,23 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-
-// IMPORTANT:
-// Adjust this import if your project uses a different supabase client path.
-import { supabase } from "@/lib/supabase";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function SignIn() {
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const from = (location.state as any)?.from ?? "/member";
-
   useEffect(() => {
-    // If already signed in, go straight to dashboard.
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate("/member", { replace: true });
     });
@@ -62,7 +55,7 @@ export default function SignIn() {
         <div className="rounded-2xl border border-white/10 bg-black/20 p-6 shadow-xl">
           <h1 className="text-3xl font-semibold tracking-tight">Sign in</h1>
           <p className="mt-2 text-white/70">
-            Enter your email and we’ll send a magic link. After clicking the link, you’ll return to your dashboard.
+            Enter your email and we’ll send a magic link. After clicking it, you’ll return to your dashboard.
           </p>
 
           <form onSubmit={sendMagicLink} className="mt-6 space-y-4">
@@ -96,7 +89,7 @@ export default function SignIn() {
 
               <button
                 type="button"
-                onClick={() => navigate(from, { replace: true })}
+                onClick={() => navigate("/member", { replace: true })}
                 className="text-sm text-white/70 hover:text-white"
               >
                 Continue →

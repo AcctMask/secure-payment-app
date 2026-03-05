@@ -5,95 +5,73 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
-  // 🔥 HANDLE PREFLIGHT FIRST
-  if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: corsHeaders,
-    });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
+    if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing Authorization" }),
-        {
-          headers: corsHeaders,
-          status: 401,
-        }
-      );
+    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    if (!stripeSecretKey) return json(500, { error: "Missing STRIPE_SECRET_KEY" });
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return json(500, { error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY" });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      {
-        global: {
-          headers: { Authorization: authHeader },
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        {
-          headers: corsHeaders,
-          status: 401,
-        }
-      );
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.toLowerCase().startsWith("bearer ")) {
+      return json(401, { error: "Missing Authorization Bearer token" });
     }
 
-    const stripe = new Stripe(
-      Deno.env.get("STRIPE_SECRET_KEY")!,
-      { apiVersion: "2023-10-16" }
-    );
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
-    const { data: member } = await supabase
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData?.user) {
+      return json(401, { error: "Invalid/expired session", details: userErr?.message });
+    }
+
+    const userId = userData.user.id;
+
+    const { data: member, error: memberErr } = await supabase
       .from("members")
-      .select("stripe_customer_id")
-      .eq("user_id", user.id)
-      .single();
+      .select("id, user_id, email, stripe_customer_id, membership_status")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-    if (!member?.stripe_customer_id) {
-      return new Response(
-        JSON.stringify({ error: "Stripe customer not found" }),
-        {
-          headers: corsHeaders,
-          status: 400,
-        }
-      );
-    }
+    if (memberErr) return json(400, { error: "Failed to load member", details: memberErr.message });
+    if (!member) return json(404, { error: "Member record not found for this user" });
+    if (member.membership_status !== "active") return json(403, { error: "Membership is not active" });
+    if (!member.stripe_customer_id) return json(400, { error: "Member missing stripe_customer_id" });
+
+    const stripe = new Stripe(stripeSecretKey, { apiVersion: "2023-10-16" });
 
     const setupIntent = await stripe.setupIntents.create({
       customer: member.stripe_customer_id,
       usage: "off_session",
+      payment_method_types: ["card"],
+      metadata: { member_id: member.id, user_id: userId },
     });
 
-    return new Response(
-      JSON.stringify({ clientSecret: setupIntent.client_secret }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      }
-    );
+    return json(200, {
+      client_secret: setupIntent.client_secret,
+      setup_intent_id: setupIntent.id,
+    });
   } catch (err) {
-    console.error(err);
-    return new Response(
-      JSON.stringify({ error: "Server error" }),
-      {
-        headers: corsHeaders,
-        status: 500,
-      }
-    );
+    return json(500, { error: "Unhandled error", details: String(err?.message ?? err) });
   }
 });
+

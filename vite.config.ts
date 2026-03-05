@@ -1,36 +1,22 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import path from "path";
-import { envReloadPlugin } from "./vite-plugin-env-reload";
 
-// https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "localhost",
-    port: 5173,
-  },
-
-
-  plugins: [
-    react(),
-    envReloadPlugin()
-  ].filter(Boolean),
-
+export default defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  build: {
-    chunkSizeWarningLimit: 1000,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'stripe-vendor': ['@stripe/stripe-js', '@stripe/react-stripe-js'],
-          'ui-vendor': ['lucide-react', 'recharts'],
-        },
-      },
-    },
+  server: {
+    host: "127.0.0.1",
+    port: 5178,
+    strictPort: true,
   },
-}));
+  optimizeDeps: {
+    // Vite sometimes corrupts the optimized dep file for this package on certain setups.
+    // Excluding it forces native ESM loading (slower startup, but stable).
+    exclude: ["@tanstack/react-query"],
+  },
+});

@@ -1,24 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabaseClient";
 import type { Session } from "@supabase/supabase-js";
 
 import { loadStripe } from "@stripe/stripe-js";
-import {
-  CardElement,
-  Elements,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 
-// Uses SetupIntent ONLY (no checkout/payment mode)
 type FundingCard = {
   id?: string;
   brand?: string;
   last4?: string;
   exp_month?: number;
   exp_year?: number;
-  created?: string;
+  created_at?: string;
 };
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
@@ -37,11 +31,7 @@ function CardRow({ card }: { card: FundingCard }) {
   );
 }
 
-function AddFundingCardInner({
-  onSaved,
-}: {
-  onSaved: () => Promise<void>;
-}) {
+function AddFundingCardInner({ onSaved }: { onSaved: () => Promise<void> }) {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -53,20 +43,19 @@ function AddFundingCardInner({
   async function ensureSetupIntent() {
     setError(null);
 
-    // Create SetupIntent via Supabase Edge Function
-    const { data, error } = await supabase.functions.invoke("create-setup-intent", {
-      body: {},
-    });
-
+    const { data, error } = await supabase.functions.invoke("create-setup-intent", { body: {} });
     if (error) throw new Error(error.message);
+
     const secret = (data as any)?.clientSecret || (data as any)?.client_secret;
     if (!secret) throw new Error("create-setup-intent did not return a client secret.");
+
     setClientSecret(secret);
   }
 
   useEffect(() => {
-    // Lazily create setup intent once this component mounts
-    ensureSetupIntent().catch((e: any) => setError(e?.message ?? "Failed to initialize setup intent."));
+    ensureSetupIntent().catch((e: any) =>
+      setError(e?.message ?? "Failed to initialize setup intent.")
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -86,11 +75,10 @@ function AddFundingCardInner({
       });
 
       if (confirmErr) throw new Error(confirmErr.message || "Card confirmation failed.");
+
       const paymentMethodId = (setupIntent as any)?.payment_method;
       if (!paymentMethodId) throw new Error("SetupIntent returned no payment_method id.");
 
-      // Save the payment method as the member's funding source.
-      // Edge function name: save-funding-card (matches your earlier flow).
       const { error: saveErr } = await supabase.functions.invoke("save-funding-card", {
         body: { payment_method_id: paymentMethodId },
       });
@@ -99,7 +87,6 @@ function AddFundingCardInner({
 
       await onSaved();
 
-      // Start fresh for another card if needed
       setReady(false);
       setClientSecret(null);
       await ensureSetupIntent();
@@ -114,7 +101,7 @@ function AddFundingCardInner({
     <div className="rounded-2xl border border-white/10 bg-black/10 p-6">
       <h2 className="text-lg font-semibold text-white">Add Funding Card</h2>
       <p className="mt-2 text-sm text-white/70">
-        Enter a card below and click “Save Funding Card”. (SetupIntent → confirmCardSetup → save-funding-card)
+        SetupIntent → confirmCardSetup → save-funding-card
       </p>
 
       {error ? (
@@ -165,8 +152,6 @@ export default function FundingCards() {
     setError(null);
     setRefreshing(true);
 
-    // This is a “Funding Source dashboard” page.
-    // It may call get-funding-cards to display stored cards, but it must NOT cause auth loops.
     const { data, error } = await supabase.functions.invoke("get-funding-cards", { body: {} });
 
     if (error) {
@@ -176,13 +161,7 @@ export default function FundingCards() {
       return;
     }
 
-    // Accept a few possible shapes from the edge function
-    const list =
-      (data as any)?.cards ||
-      (data as any)?.funding_cards ||
-      (data as any)?.paymentMethods ||
-      [];
-
+    const list = (data as any)?.cards || (data as any)?.funding_cards || [];
     setCards(Array.isArray(list) ? list : []);
     setRefreshing(false);
   }
@@ -206,7 +185,6 @@ export default function FundingCards() {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession ?? null);
-      // DO NOT auto-navigate here (prevents loops)
     });
 
     return () => {
@@ -283,18 +261,14 @@ export default function FundingCards() {
         </div>
 
         <Elements stripe={stripePromise} options={{}}>
-          <AddFundingCardInner
-            onSaved={async () => {
-              await loadCards();
-            }}
-          />
+          <AddFundingCardInner onSaved={loadCards} />
         </Elements>
       </div>
 
       <div className="mt-8">
         <button
           className="rounded-xl bg-white/10 px-4 py-2 text-white hover:bg-white/15"
-          onClick={() => navigate("/dashboard")}
+          onClick={() => navigate("/member")}
         >
           Back to Member Dashboard
         </button>
