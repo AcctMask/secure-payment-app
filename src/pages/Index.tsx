@@ -3,10 +3,12 @@ import { Link } from "react-router-dom";
 
 import CustomerDemoModal from "@/components/CustomerDemoModal";
 import InvestorDemoModal from "@/components/InvestorDemoModal";
+import FraudStatsModal from "@/components/FraudStatsModal";
 
 export default function Index() {
   const [isCustomerDemoOpen, setIsCustomerDemoOpen] = useState(false);
   const [isInvestorDemoOpen, setIsInvestorDemoOpen] = useState(false);
+  const [isFraudStatsOpen, setIsFraudStatsOpen] = useState(false);
 
   return (
     <>
@@ -32,7 +34,7 @@ export default function Index() {
                 after use.
               </p>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
                   to="/member"
                   className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-3 text-sm font-medium text-white shadow hover:opacity-95"
@@ -53,6 +55,13 @@ export default function Index() {
                 >
                   Investor Demo
                 </button>
+
+                <button
+                  onClick={() => setIsFraudStatsOpen(true)}
+                  className="inline-flex items-center justify-center rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-6 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-400/20"
+                >
+                  Fraud Statistics
+                </button>
               </div>
             </div>
 
@@ -63,25 +72,9 @@ export default function Index() {
               <div className="relative grid aspect-[16/9] w-full place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-black/40 via-indigo-900/30 to-purple-900/30">
                 <div className="grid place-items-center gap-4 px-6 text-center">
                   <div className="grid h-20 w-20 place-items-center rounded-2xl border border-white/10 bg-white/5">
-                    <svg
-                      width="44"
-                      height="44"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z"
-                        className="stroke-sky-300"
-                        strokeWidth="1.6"
-                      />
-                      <path
-                        d="M8.6 12.2l2.1 2.1 4.7-4.7"
-                        className="stroke-purple-300"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
+                    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z" className="stroke-sky-300" strokeWidth="1.6" />
+                      <path d="M8.6 12.2l2.1 2.1 4.7-4.7" className="stroke-purple-300" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </div>
 
@@ -91,7 +84,6 @@ export default function Index() {
 
                   <div className="flex items-center justify-center gap-2">
                     <div className="h-2 w-2 rounded-full bg-emerald-400" />
-
                     <div className="text-xs text-white/70">
                       Fraud-resistant checkout flow
                     </div>
@@ -110,15 +102,9 @@ export default function Index() {
         </div>
       </div>
 
-      <CustomerDemoModal
-        open={isCustomerDemoOpen}
-        onOpenChange={setIsCustomerDemoOpen}
-      />
-
-      <InvestorDemoModal
-        open={isInvestorDemoOpen}
-        onOpenChange={setIsInvestorDemoOpen}
-      />
+      <CustomerDemoModal open={isCustomerDemoOpen} onOpenChange={setIsCustomerDemoOpen} />
+      <InvestorDemoModal open={isInvestorDemoOpen} onOpenChange={setIsInvestorDemoOpen} />
+      <FraudStatsModal open={isFraudStatsOpen} onOpenChange={setIsFraudStatsOpen} />
     </>
   );
 }
