@@ -50,22 +50,22 @@ export default function PitchDeck() {
             />
           </div>
           <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Revolutionary Fraud Prevention
+            What Is PashLoc?
           </h1>
-          <p className="text-2xl text-slate-600 mb-4">
-            Rotating Virtual Card Technology
+          <p className="text-2xl text-slate-700 mb-4">
+            A payment-security platform designed to reduce fraud exposure by limiting reliance on reusable payment credentials.
           </p>
           <p className="text-lg text-slate-500 mb-6">
-            Eliminating 60-80% of Card Fraud Losses
+            PashLoc focuses on transaction-specific virtual payment credentials that reduce replay value, protect underlying funding sources, and support a safer purchase experience.
           </p>
-          <div className="flex gap-4 justify-center text-base text-slate-600">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 justify-center text-base text-slate-600 sm:flex-row">
+            <div className="flex items-center justify-center gap-2">
               <Shield className="w-5 h-5 text-blue-600" />
-              <span>Patent-Pending Technology</span>
+              <span>Patent-Pending Security Model</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2">
               <DollarSign className="w-5 h-5 text-green-600" />
-              <span>Billion-Dollar Savings Potential</span>
+              <span>Large Fraud-Reduction Opportunity</span>
             </div>
           </div>
         </div>

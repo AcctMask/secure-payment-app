@@ -89,11 +89,11 @@ export default function InvestorDemoModal({
         <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-violet-950/60 px-5 py-6 sm:px-8 sm:py-8">
           <DialogHeader>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-300">
-              Investor / Partner Demo
+              Platform Overview
             </p>
 
             <DialogTitle className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              PashLoc as payment-security infrastructure
+              PashLoc as a payment-security platform
             </DialogTitle>
 
             <p className="mt-2 text-sm text-slate-300">

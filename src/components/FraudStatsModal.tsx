@@ -76,11 +76,11 @@ export default function FraudStatsModal({ open, onOpenChange }: FraudStatsModalP
         <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/60 px-5 py-6 sm:px-8 sm:py-8">
           <DialogHeader>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">
-              Fraud Statistics
+              Why Fraud Persists
             </p>
 
             <DialogTitle className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Why PashLoc matters
+              Understanding the fraud problem
             </DialogTitle>
 
             <p className="mt-2 text-sm text-slate-300">

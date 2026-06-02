@@ -46,21 +46,21 @@ export default function Index() {
                   onClick={() => setIsCustomerDemoOpen(true)}
                   className="inline-flex items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-6 py-3 text-sm font-medium text-cyan-100 hover:bg-cyan-400/20"
                 >
-                  Customer Demo
+                  How PashLoc Protects You
                 </button>
 
                 <button
                   onClick={() => setIsInvestorDemoOpen(true)}
                   className="inline-flex items-center justify-center rounded-lg border border-violet-400/20 bg-violet-400/10 px-6 py-3 text-sm font-medium text-violet-100 hover:bg-violet-400/20"
                 >
-                  Investor Demo
+                  Platform Overview
                 </button>
 
                 <button
                   onClick={() => setIsFraudStatsOpen(true)}
                   className="inline-flex items-center justify-center rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-6 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-400/20"
                 >
-                  Fraud Statistics
+                  Why Fraud Persists
                 </button>
               </div>
             </div>
