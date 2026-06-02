@@ -7,6 +7,7 @@ import SignIn from "@/pages/SignIn";
 import BecomeMember from "@/pages/BecomeMember";
 import MemberDashboard from "@/pages/MemberDashboard";
 import FundingCards from "@/pages/member/FundingCards";
+import Terms from "@/pages/Terms";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/pitch-deck" element={<PitchDeck />} />
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/become-member" element={<BecomeMember />} />
+        <Route path="/terms" element={<Terms />} />
 
         {/* Member */}
         <Route path="/member" element={<MemberDashboard />} />

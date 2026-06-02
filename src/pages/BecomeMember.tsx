@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function BecomeMember() {
@@ -48,6 +49,18 @@ export default function BecomeMember() {
       >
         {loading ? "Redirecting..." : "Start Membership"}
       </button>
+
+      <p className="mt-4 max-w-md text-sm leading-6 text-white/55">
+        By continuing, you agree to our{" "}
+        <Link to="/terms" className="text-white/80 underline underline-offset-4 hover:text-white">
+          Terms of Service
+        </Link>{" "}
+        and{" "}
+        <Link to="/privacy" className="text-white/80 underline underline-offset-4 hover:text-white">
+          Privacy Policy
+        </Link>
+        .
+      </p>
 
       {error ? (
         <div className="mt-6 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
